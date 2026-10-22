@@ -1,0 +1,8 @@
+{
+  "name": "MAN 11 Jakarta - Learning Management System",
+  "description": "Learning Management System MAN 11 Jakarta. Platform LMS & CBT terpadu dengan fitur unggah materi pelajaran PDF, Asesmen Sumatif, AI Generator, anti-curang fullscreen, serta manajemen Admin, Guru, dan Siswa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
