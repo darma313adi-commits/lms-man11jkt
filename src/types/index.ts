@@ -1,5 +1,41 @@
 export type UserRole = 'admin' | 'guru' | 'siswa';
 
+export interface RombelKelas {
+  id: string;
+  nama: string; // e.g. 'X MIPA 1', 'XI IPS 2'
+  tingkat: 'X' | 'XI' | 'XII' | string;
+  jurusan: 'MIPA' | 'IPS' | 'Bahasa' | 'Keagamaan' | 'Umum' | string;
+  waliKelasId?: string;
+  waliKelasNama?: string;
+  tahunAjaran?: string; // e.g. '2025/2026'
+  kapasitas?: number;
+  keterangan?: string;
+  createdAt?: string;
+}
+
+export interface MataPelajaran {
+  id: string;
+  kode: string; // e.g. 'BIO-01', 'MAT-W'
+  nama: string; // e.g. 'Biologi', 'Matematika Peminatan'
+  kategori: 'Peminatan MIPA' | 'Peminatan IPS' | 'Umum / Wajib' | 'Peminatan Bahasa' | 'Keagamaan' | string;
+  kkmDefault: number;
+  jamPerMinggu?: number;
+  createdAt?: string;
+}
+
+export interface KelasMapelPengampu {
+  id: string;
+  kelasNama: string; // e.g. 'X MIPA 1'
+  mapelId: string;
+  mapelNama: string;
+  mapelKode?: string;
+  guruId?: string;
+  guruNama?: string;
+  jadwalHari?: string;
+  jamMulai?: string;
+  jamSelesai?: string;
+}
+
 export interface User {
   id: string;
   username: string;
@@ -11,6 +47,7 @@ export interface User {
   nip?: string;
   nisn?: string;
   mataPelajaran?: string; // Khusus guru
+  kelasAjar?: string[]; // Khusus guru: daftar kelas yang diajar
   status: 'aktif' | 'nonaktif';
   createdAt: string;
 }
@@ -26,6 +63,7 @@ export interface PilihanOpsi {
   id: string;
   label: string; // 'A', 'B', 'C', 'D', 'E'
   text: string;
+  gambar?: string; // URL / Base64 image data untuk opsi jawaban
 }
 
 export interface PasanganMenjodohkan {
@@ -45,6 +83,7 @@ export interface QuestionItem {
   type: QuestionType;
   nomor: number;
   pertanyaan: string; // Pertanyaan teks/wacana
+  gambar?: string; // URL / Base64 image data untuk redaksi soal / stimulus
   deskripsiStimulus?: string; // Khusus Model TKA / Soal Cerita
   pilihan?: PilihanOpsi[]; // Untuk PG & PG Kompleks
   kunciJawaban?: string | string[]; // string untuk PG/isian, string[] untuk PG Kompleks
@@ -52,6 +91,16 @@ export interface QuestionItem {
   pernyataanTKA?: PernyataanTKA[]; // TKA: 1 deskripsi wacana + 3 pernyataan (Benar/Salah)
   bobot: number;
   pembahasan?: string;
+}
+
+export interface ExamToken {
+  id: string;
+  token: string;
+  nomor: number; // 1, 2, 3, 4, dst.
+  label: string; // 'Token 1', 'Token 2', 'Token 3', ...
+  createdAt: string; // ISO string
+  expiresAt: string; // ISO string (10 menit setelah createdAt)
+  isCustom?: boolean;
 }
 
 export interface Exam {
@@ -71,6 +120,11 @@ export interface Exam {
   acakSoal?: boolean;
   acakOpsi?: boolean;
   tampilkanNilai?: boolean;
+  waktuMulai?: string; // Waktu mulai aktif ujian (ISO / YYYY-MM-DDTHH:mm)
+  waktuKadaluarsa?: string; // Waktu batas akhir / kadaluarsa ujian
+  tokenUjian?: string; // Token masuk ujian utama / aktif saat ini
+  tokenList?: ExamToken[]; // Daftar multi-token bergilir (Token 1, Token 2, Token 3, dst.) yang expired setelah 10 menit
+  useToken?: boolean; // Mengharuskan siswa memasukkan token
   createdAt: string;
 }
 

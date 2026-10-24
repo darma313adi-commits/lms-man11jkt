@@ -17,6 +17,10 @@ import {
   Download,
   Eye,
   FolderOpen,
+  Key,
+  Lock,
+  CalendarDays,
+  XCircle,
 } from 'lucide-react';
 
 export const SiswaDashboard: React.FC = () => {
@@ -24,6 +28,8 @@ export const SiswaDashboard: React.FC = () => {
   const [selectedExamToStart, setSelectedExamToStart] = useState<Exam | null>(null);
   const [activeTab, setActiveTab] = useState<'aktif' | 'materi' | 'riwayat'>('aktif');
   const [previewMaterial, setPreviewMaterial] = useState<LessonMaterial | null>(null);
+  const [tokenInput, setTokenInput] = useState('');
+  const [tokenError, setTokenError] = useState<string | null>(null);
 
   if (!currentUser) return null;
 
@@ -31,8 +37,9 @@ export const SiswaDashboard: React.FC = () => {
   const studentClass = currentUser.kelas || 'X MIPA 1';
   const availableExams = exams.filter(
     (ex) =>
-      ex.status === 'aktif' &&
-      (ex.kelasTarget.includes(studentClass) || ex.kelasTarget.some((k) => studentClass.includes(k)))
+      ex.kelasTarget.includes(studentClass) ||
+      ex.kelasTarget.some((k) => studentClass.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(studentClass.toLowerCase())) ||
+      ex.kelasTarget.includes('Semua Kelas')
   );
 
   // Filter materials for this student's class
@@ -48,8 +55,46 @@ export const SiswaDashboard: React.FC = () => {
 
   const studentSubmissions = submissions.filter((s) => s.siswaId === currentUser.id);
 
+  const handleOpenStartExamModal = (exam: Exam) => {
+    setSelectedExamToStart(exam);
+    setTokenInput('');
+    setTokenError(null);
+  };
+
   const handleConfirmStartExam = (exam: Exam) => {
+    // Check token if required
+    if (exam.useToken) {
+      const entered = tokenInput.trim().toUpperCase();
+      if (!entered) {
+        setTokenError('Wajib memasukkan Token Ujian yang diberikan oleh Guru Pengawas!');
+        return;
+      }
+
+      if (exam.tokenList && exam.tokenList.length > 0) {
+        const matched = exam.tokenList.find(
+          (t) => t.token.trim().toUpperCase() === entered
+        );
+        if (!matched) {
+          setTokenError(`Token ujian "${entered}" tidak valid / tidak ditemukan! Silakan tanyakan token aktif pada guru pengawas.`);
+          return;
+        }
+
+        const expireTime = new Date(matched.expiresAt).getTime();
+        if (Date.now() >= expireTime) {
+          setTokenError(`Token "${entered}" (${matched.label}) sudah KADALUARSA (melewati batas waktu 10 menit)! Silakan minta token baru yang masih aktif kepada guru pengawas.`);
+          return;
+        }
+      } else if (exam.tokenUjian) {
+        if (entered !== exam.tokenUjian.trim().toUpperCase()) {
+          setTokenError(`Token ujian "${entered}" tidak valid! Silakan tanyakan token resmi kepada guru pengawas.`);
+          return;
+        }
+      }
+    }
+
     setSelectedExamToStart(null);
+    setTokenInput('');
+    setTokenError(null);
     startExamSession(exam, currentUser);
   };
 
@@ -153,16 +198,49 @@ export const SiswaDashboard: React.FC = () => {
                 );
                 const isFinished = existingSub?.status === 'sudah_dikumpulkan';
 
+                const isExamActive = exam.status === 'aktif';
+                const now = Date.now();
+                const startTime = exam.waktuMulai ? new Date(exam.waktuMulai).getTime() : null;
+                const expireTime = exam.waktuKadaluarsa ? new Date(exam.waktuKadaluarsa).getTime() : null;
+                const isNotStarted = startTime !== null && !isNaN(startTime) && now < startTime;
+                const isExpired = expireTime !== null && !isNaN(expireTime) && now > expireTime;
+                const canStart = isExamActive && !isNotStarted && !isExpired;
+
                 return (
                   <div
                     key={exam.id}
                     className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs hover:shadow-md transition flex flex-col justify-between"
                   >
                     <div>
-                      <div className="flex items-center justify-between gap-2 mb-3">
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          {exam.mataPelajaran}
-                        </span>
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {exam.mataPelajaran}
+                          </span>
+                          {!isExamActive ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                              🔴 Nonaktif
+                            </span>
+                          ) : isNotStarted ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                              ⏳ Belum Mulai
+                            </span>
+                          ) : isExpired ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                              ⌛ Waktu Habis
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              🟢 Sedang Dibuka
+                            </span>
+                          )}
+                          {exam.useToken && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
+                              <Key className="w-2.5 h-2.5" />
+                              Wajib Token
+                            </span>
+                          )}
+                        </div>
                         <span className="font-mono text-xs font-bold text-slate-500">
                           Kode: {exam.kodeUjian}
                         </span>
@@ -174,6 +252,24 @@ export const SiswaDashboard: React.FC = () => {
                       <p className="text-xs text-slate-500 mt-1 line-clamp-2">
                         {exam.deskripsi}
                       </p>
+
+                      {/* Schedule info if set */}
+                      {(exam.waktuMulai || exam.waktuKadaluarsa) && (
+                        <div className="mt-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1">
+                          <div className="flex items-center gap-1.5 font-semibold text-slate-700">
+                            <CalendarDays className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                            <span>Jadwal Akses Soal:</span>
+                          </div>
+                          <div className="pl-5 text-slate-500 text-[10px] space-y-0.5">
+                            {exam.waktuMulai && (
+                              <p>Mulai: <strong className="text-slate-700 font-mono">{new Date(exam.waktuMulai).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</strong></p>
+                            )}
+                            {exam.waktuKadaluarsa && (
+                              <p>Batas Selesai: <strong className="text-slate-700 font-mono">{new Date(exam.waktuKadaluarsa).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</strong></p>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-slate-100 text-xs text-slate-600">
                         <div>
@@ -210,13 +306,28 @@ export const SiswaDashboard: React.FC = () => {
                             Tinjau Hasil
                           </button>
                         </div>
+                      ) : !isExamActive ? (
+                        <div className="w-full py-3 rounded-xl bg-slate-100 text-slate-400 font-bold text-xs flex items-center justify-center gap-2 cursor-not-allowed border border-slate-200">
+                          <Lock className="w-4 h-4" />
+                          <span>Ujian Nonaktif (Belum Diizinkan Guru)</span>
+                        </div>
+                      ) : isNotStarted ? (
+                        <div className="w-full py-3 rounded-xl bg-amber-50 text-amber-700 font-bold text-xs flex items-center justify-center gap-2 cursor-not-allowed border border-amber-200">
+                          <Clock className="w-4 h-4 text-amber-600" />
+                          <span>Belum Dibuka (Menunggu Jadwal Mulai)</span>
+                        </div>
+                      ) : isExpired ? (
+                        <div className="w-full py-3 rounded-xl bg-slate-100 text-slate-500 font-bold text-xs flex items-center justify-center gap-2 cursor-not-allowed border border-slate-200">
+                          <XCircle className="w-4 h-4 text-slate-400" />
+                          <span>Waktu Ujian Telah Berakhir</span>
+                        </div>
                       ) : (
                         <button
-                          onClick={() => setSelectedExamToStart(exam)}
+                          onClick={() => handleOpenStartExamModal(exam)}
                           className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition"
                         >
-                          <Play className="w-4 h-4 fill-white" />
-                          <span>Mulai Mengerjakan Ujian</span>
+                          {exam.useToken ? <Key className="w-4 h-4" /> : <Play className="w-4 h-4 fill-white" />}
+                          <span>{exam.useToken ? 'Masukkan Token & Mulai Ujian' : 'Mulai Mengerjakan Ujian'}</span>
                         </button>
                       )}
                     </div>
@@ -413,6 +524,36 @@ export const SiswaDashboard: React.FC = () => {
                 </li>
               </ul>
             </div>
+
+            {/* Token Ujian Form if required */}
+            {selectedExamToStart.useToken && (
+              <div className="my-4 p-4 rounded-2xl bg-indigo-50/80 border border-indigo-200 text-left">
+                <label className="block text-xs font-bold text-indigo-950 mb-1 flex items-center gap-1.5">
+                  <Key className="w-4 h-4 text-indigo-600" />
+                  <span>Token Masuk Ujian (Wajib dari Guru / Pengawas)</span>
+                </label>
+                <p className="text-[11px] text-slate-600 mb-2.5 leading-relaxed">
+                  Masukkan token ujian yang diberikan oleh guru pengawas untuk membuka lembar kerja soal ini.
+                </p>
+                <input
+                  type="text"
+                  value={tokenInput}
+                  onChange={(e) => {
+                    setTokenInput(e.target.value.toUpperCase());
+                    if (tokenError) setTokenError(null);
+                  }}
+                  placeholder="KETIK TOKEN DI SINI..."
+                  className="w-full text-center text-sm font-black font-mono tracking-widest px-4 py-2.5 rounded-xl border-2 border-indigo-300 focus:border-indigo-600 focus:outline-none bg-white uppercase shadow-inner text-indigo-950 placeholder:text-slate-300 placeholder:font-normal placeholder:tracking-normal"
+                  autoFocus
+                />
+                {tokenError && (
+                  <div className="mt-2.5 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-start gap-2 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <span className="leading-tight">{tokenError}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex gap-2">
               <button

@@ -11,12 +11,15 @@ import {
   User as UserIcon,
   RefreshCw,
   Sparkles,
+  Lock,
 } from 'lucide-react';
+import { ChangePasswordModal } from './guru/ChangePasswordModal';
 
 export const Navbar: React.FC = () => {
   const { currentUser, logout, switchUser, users, resetAllDataToDefault } = useLMS();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   if (!currentUser) return null;
 
@@ -154,6 +157,17 @@ export const Navbar: React.FC = () => {
                 <div className="p-1">
                   <button
                     onClick={() => {
+                      setShowPasswordModal(true);
+                      setDropdownOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-indigo-700 hover:bg-indigo-50 rounded-lg transition font-medium"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Ubah Kata Sandi</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
                       if (confirm('Reset seluruh data ke kondisi awal (akun darma313adi, soal demo, dan hasil)?')) {
                         resetAllDataToDefault();
                         setDropdownOpen(false);
@@ -181,6 +195,11 @@ export const Navbar: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <ChangePasswordModal
+        isOpen={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
+      />
     </header>
   );
 };

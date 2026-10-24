@@ -19,17 +19,37 @@ import {
   AlertCircle,
   School,
   Lock,
+  Layers,
+  Sparkles,
+  UserCheck,
 } from 'lucide-react';
 import {
   parseExcelUsers,
   downloadUserTemplateExcel,
   exportUsersExcel,
 } from '../../utils/fileParser';
+import { RombelManager } from './RombelManager';
+import { MapelManager } from './MapelManager';
+import { PlottingGuruManager } from './PlottingGuruManager';
 
 export const AdminDashboard: React.FC = () => {
-  const { users, addUser, updateUser, deleteUser, importUsers, exams, submissions } = useLMS();
+  const {
+    users,
+    addUser,
+    updateUser,
+    deleteUser,
+    importUsers,
+    exams,
+    submissions,
+    rombelList,
+    mataPelajaranList,
+    kelasMapelPengampuList,
+  } = useLMS();
 
-  const [activeTab, setActiveTab] = useState<'daftar' | 'import' | 'manual'>('daftar');
+  const [activeTab, setActiveTab] = useState<
+    'daftar' | 'rombel' | 'mapel' | 'plotting' | 'import' | 'manual'
+  >('daftar');
+  const [plottingTargetKelas, setPlottingTargetKelas] = useState<string>('X MIPA 1');
   const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
   const [kelasFilter, setKelasFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,9 +75,12 @@ export const AdminDashboard: React.FC = () => {
   const [pastedPdfText, setPastedPdfText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Derived unique classes
+  // Derived unique classes from rombelList and users
   const classesList = Array.from(
-    new Set(users.filter((u) => u.role === 'siswa' && u.kelas).map((u) => u.kelas as string))
+    new Set([
+      ...rombelList.map((r) => r.nama),
+      ...users.filter((u) => u.role === 'siswa' && u.kelas).map((u) => u.kelas as string),
+    ])
   ).sort();
 
   const teachersCount = users.filter((u) => u.role === 'guru').length;
@@ -95,6 +118,7 @@ export const AdminDashboard: React.FC = () => {
       nisn: formData.role === 'siswa' ? formData.nipNisn : undefined,
       email: formData.email || `${formData.username}@sekolah.sch.id`,
       mataPelajaran: formData.role === 'guru' ? formData.mataPelajaran : undefined,
+      kelasAjar: formData.role === 'guru' ? ['X MIPA 1', 'X MIPA 2', 'XI MIPA 1'] : undefined,
       status: 'aktif',
     });
 
@@ -249,37 +273,68 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8 pt-6 border-t border-white/10">
-          <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-            <div className="flex items-center gap-2 text-indigo-300 text-xs font-semibold">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5 mt-8 pt-6 border-t border-white/10">
+          <div className="bg-white/5 rounded-2xl p-3.5 border border-white/10">
+            <div className="flex items-center gap-1.5 text-indigo-300 text-xs font-semibold">
               <BookOpen className="w-4 h-4" />
               <span>Total Guru</span>
             </div>
-            <p className="text-2xl sm:text-3xl font-black mt-1 text-white">{teachersCount}</p>
+            <p className="text-2xl font-black mt-1 text-white">{teachersCount}</p>
           </div>
 
-          <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-            <div className="flex items-center gap-2 text-emerald-300 text-xs font-semibold">
+          <div className="bg-white/5 rounded-2xl p-3.5 border border-white/10">
+            <div className="flex items-center gap-1.5 text-emerald-300 text-xs font-semibold">
               <GraduationCap className="w-4 h-4" />
               <span>Total Siswa</span>
             </div>
-            <p className="text-2xl sm:text-3xl font-black mt-1 text-white">{studentsCount}</p>
+            <p className="text-2xl font-black mt-1 text-white">{studentsCount}</p>
           </div>
 
-          <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-            <div className="flex items-center gap-2 text-amber-300 text-xs font-semibold">
-              <School className="w-4 h-4" />
-              <span>Jumlah Rombel/Kelas</span>
+          <div
+            onClick={() => setActiveTab('rombel')}
+            className="bg-white/5 hover:bg-white/10 cursor-pointer rounded-2xl p-3.5 border border-white/10 transition group"
+            title="Klik untuk kelola Rombel Kelas"
+          >
+            <div className="flex items-center justify-between text-amber-300 text-xs font-semibold">
+              <div className="flex items-center gap-1.5">
+                <School className="w-4 h-4" />
+                <span>Rombel Kelas</span>
+              </div>
+              <span className="text-[10px] text-white/50 group-hover:text-white">Kelola →</span>
             </div>
-            <p className="text-2xl sm:text-3xl font-black mt-1 text-white">{classesList.length}</p>
+            <p className="text-2xl font-black mt-1 text-white">{rombelList.length}</p>
           </div>
 
-          <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-            <div className="flex items-center gap-2 text-rose-300 text-xs font-semibold">
-              <Users className="w-4 h-4" />
-              <span>Total Pengguna</span>
+          <div
+            onClick={() => setActiveTab('mapel')}
+            className="bg-white/5 hover:bg-white/10 cursor-pointer rounded-2xl p-3.5 border border-white/10 transition group"
+            title="Klik untuk kelola Mata Pelajaran"
+          >
+            <div className="flex items-center justify-between text-cyan-300 text-xs font-semibold">
+              <div className="flex items-center gap-1.5">
+                <Layers className="w-4 h-4" />
+                <span>Mata Pelajaran</span>
+              </div>
+              <span className="text-[10px] text-white/50 group-hover:text-white">Kelola →</span>
             </div>
-            <p className="text-2xl sm:text-3xl font-black mt-1 text-white">{users.length}</p>
+            <p className="text-2xl font-black mt-1 text-white">{mataPelajaranList.length}</p>
+          </div>
+
+          <div
+            onClick={() => setActiveTab('plotting')}
+            className="bg-white/5 hover:bg-white/10 cursor-pointer rounded-2xl p-3.5 border border-white/10 transition group"
+            title="Klik untuk atur Plotting Guru & Mapel per Kelas"
+          >
+            <div className="flex items-center justify-between text-rose-300 text-xs font-semibold">
+              <div className="flex items-center gap-1.5">
+                <UserCheck className="w-4 h-4" />
+                <span>Plotting Guru</span>
+              </div>
+              <span className="text-[10px] text-white/50 group-hover:text-white">Atur →</span>
+            </div>
+            <p className="text-2xl font-black mt-1 text-white">
+              {kelasMapelPengampuList.filter((k) => k.guruId).length} Plot
+            </p>
           </div>
         </div>
       </div>
@@ -311,24 +366,60 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* Tabs Control */}
-      <div className="flex items-center gap-2 border-b border-slate-200 mb-6">
+      <div className="flex items-center gap-1.5 border-b border-slate-200 mb-6 overflow-x-auto pb-1">
         <button
           onClick={() => setActiveTab('daftar')}
-          className={`flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition ${
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition shrink-0 ${
             activeTab === 'daftar'
-              ? 'border-indigo-600 text-indigo-700'
+              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40 rounded-t-xl'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <Users className="w-4 h-4" />
-          <span>Daftar Guru & Siswa ({users.length})</span>
+          <span>Guru & Siswa ({users.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('rombel')}
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition shrink-0 ${
+            activeTab === 'rombel'
+              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40 rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <School className="w-4 h-4" />
+          <span>Rombongan Kelas ({rombelList.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('mapel')}
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition shrink-0 ${
+            activeTab === 'mapel'
+              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40 rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>Mata Pelajaran ({mataPelajaranList.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('plotting')}
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition shrink-0 ${
+            activeTab === 'plotting'
+              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40 rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <UserCheck className="w-4 h-4" />
+          <span>Plotting Guru & Mapel per Kelas</span>
         </button>
 
         <button
           onClick={() => setActiveTab('import')}
-          className={`flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition ${
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition shrink-0 ${
             activeTab === 'import'
-              ? 'border-indigo-600 text-indigo-700'
+              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40 rounded-t-xl'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
@@ -338,14 +429,14 @@ export const AdminDashboard: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('manual')}
-          className={`flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition ${
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition shrink-0 ${
             activeTab === 'manual'
-              ? 'border-indigo-600 text-indigo-700'
+              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40 rounded-t-xl'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <Plus className="w-4 h-4" />
-          <span>Tambah Akun Baru</span>
+          <span>+ Tambah Akun</span>
         </button>
       </div>
 
@@ -483,7 +574,25 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 2: Impor File (Excel & PDF) */}
+      {/* Tab: Rombongan Kelas (Rombel) */}
+      {activeTab === 'rombel' && (
+        <RombelManager
+          onSelectPlotting={(kelasNama) => {
+            setPlottingTargetKelas(kelasNama);
+            setActiveTab('plotting');
+          }}
+        />
+      )}
+
+      {/* Tab: Master Mata Pelajaran (Mapel) */}
+      {activeTab === 'mapel' && <MapelManager />}
+
+      {/* Tab: Plotting Guru & Mapel per Kelas */}
+      {activeTab === 'plotting' && (
+        <PlottingGuruManager initialKelas={plottingTargetKelas} />
+      )}
+
+      {/* Tab: Impor File (Excel & PDF) */}
       {activeTab === 'import' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Card 1: Import via Excel */}
@@ -650,28 +759,35 @@ export const AdminDashboard: React.FC = () => {
               {formData.role === 'siswa' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Kelas / Rombel *</label>
-                  <input
-                    type="text"
-                    required
+                  <select
                     value={formData.kelas}
                     onChange={(e) => setFormData({ ...formData, kelas: e.target.value })}
-                    placeholder="Contoh: X MIPA 1, XI IPS 2"
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
-                  />
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white font-semibold"
+                  >
+                    {classesList.map((k) => (
+                      <option key={k} value={k}>
+                        {k}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 
               {formData.role === 'guru' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Mata Pelajaran Diampu *</label>
-                  <input
-                    type="text"
-                    required
+                  <select
                     value={formData.mataPelajaran}
                     onChange={(e) => setFormData({ ...formData, mataPelajaran: e.target.value })}
-                    placeholder="Contoh: Matematika, Fisika, Biologi"
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
-                  />
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white font-medium"
+                  >
+                    <option value="">-- Pilih Mata Pelajaran Utama --</option>
+                    {mataPelajaranList.map((m) => (
+                      <option key={m.id} value={m.nama}>
+                        {m.nama} ({m.kode})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
             </div>
@@ -799,12 +915,17 @@ export const AdminDashboard: React.FC = () => {
               {editingUser.role === 'siswa' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Kelas</label>
-                  <input
-                    type="text"
+                  <select
                     value={editingUser.kelas || ''}
                     onChange={(e) => setEditingUser({ ...editingUser, kelas: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
-                  />
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white font-semibold"
+                  >
+                    {classesList.map((k) => (
+                      <option key={k} value={k}>
+                        {k}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 

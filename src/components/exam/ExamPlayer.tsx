@@ -385,6 +385,20 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
                   {currentSoal.pertanyaan}
                 </p>
 
+                {/* Question Image (Redaksi Soal) if available */}
+                {currentSoal.gambar && (
+                  <div className="my-4 p-2 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center">
+                    <img
+                      src={currentSoal.gambar}
+                      alt="Gambar Redaksi Soal"
+                      className="max-h-80 max-w-full rounded-xl object-contain shadow-xs"
+                    />
+                    <span className="text-[10px] text-slate-500 font-semibold mt-1">
+                      🔍 Lampiran Gambar / Stimulus Soal
+                    </span>
+                  </div>
+                )}
+
                 {/* Interactive Answer Input based on type */}
                 {/* TYPE 1: PILIHAN GANDA (Single Choice) */}
                 {currentSoal.type === 'pilihan_ganda' && currentSoal.pilihan && (
@@ -396,14 +410,14 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
                           key={opt.id}
                           type="button"
                           onClick={() => updateStudentAnswer(currentSoal.id, opt.label)}
-                          className={`w-full text-left p-3.5 sm:p-4 rounded-2xl border text-xs sm:text-sm flex items-center gap-3.5 transition cursor-pointer ${
+                          className={`w-full text-left p-3.5 sm:p-4 rounded-2xl border text-xs sm:text-sm flex items-start gap-3.5 transition cursor-pointer ${
                             isSelected
                               ? 'bg-indigo-50/80 border-indigo-600 text-indigo-950 font-semibold ring-2 ring-indigo-500/20 shadow-xs'
                               : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                           }`}
                         >
                           <span
-                            className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 transition ${
+                            className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 transition mt-0.5 ${
                               isSelected
                                 ? 'bg-indigo-600 text-white shadow-xs'
                                 : 'bg-slate-100 text-slate-700'
@@ -411,7 +425,18 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
                           >
                             {opt.label}
                           </span>
-                          <span className="flex-1 leading-snug">{opt.text}</span>
+                          <div className="flex-1">
+                            <span className="leading-snug block">{opt.text}</span>
+                            {opt.gambar && (
+                              <div className="mt-2 p-1.5 bg-white border border-slate-200 rounded-xl inline-block max-w-full">
+                                <img
+                                  src={opt.gambar}
+                                  alt={`Gambar Opsi ${opt.label}`}
+                                  className="max-h-40 max-w-full object-contain rounded-lg"
+                                />
+                              </div>
+                            )}
+                          </div>
                         </button>
                       );
                     })}
@@ -437,22 +462,33 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
                               : [...selectedList, opt.label];
                             updateStudentAnswer(currentSoal.id, next);
                           }}
-                          className={`w-full text-left p-3.5 sm:p-4 rounded-2xl border text-xs sm:text-sm flex items-center gap-3.5 transition cursor-pointer ${
+                          className={`w-full text-left p-3.5 sm:p-4 rounded-2xl border text-xs sm:text-sm flex items-start gap-3.5 transition cursor-pointer ${
                             isSelected
                               ? 'bg-indigo-50/80 border-indigo-600 text-indigo-950 font-semibold ring-2 ring-indigo-500/20 shadow-xs'
                               : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                           }`}
                         >
                           <div
-                            className={`w-6 h-6 rounded-md flex items-center justify-center text-white text-xs font-bold shrink-0 ${
+                            className={`w-6 h-6 rounded-md flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5 ${
                               isSelected ? 'bg-indigo-600' : 'border-2 border-slate-300 bg-white'
                             }`}
                           >
                             {isSelected && <CheckCircle2 className="w-4 h-4" />}
                           </div>
-                          <span className="flex-1 leading-snug">
-                            <strong>{opt.label}.</strong> {opt.text}
-                          </span>
+                          <div className="flex-1">
+                            <span className="leading-snug block">
+                              <strong>{opt.label}.</strong> {opt.text}
+                            </span>
+                            {opt.gambar && (
+                              <div className="mt-2 p-1.5 bg-white border border-slate-200 rounded-xl inline-block max-w-full">
+                                <img
+                                  src={opt.gambar}
+                                  alt={`Gambar Opsi ${opt.label}`}
+                                  className="max-h-40 max-w-full object-contain rounded-lg"
+                                />
+                              </div>
+                            )}
+                          </div>
                         </button>
                       );
                     })}

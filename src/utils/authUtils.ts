@@ -1,6 +1,7 @@
 export interface PasswordValidationResult {
   valid: boolean;
   error?: string;
+  message?: string;
 }
 
 export function validatePasswordChange(
@@ -13,28 +14,34 @@ export function validatePasswordChange(
   const trimmedNew = newPassword.trim();
 
   if (!trimmedCurrent) {
-    return { valid: false, error: 'Kata sandi saat ini wajib diisi.' };
+    const msg = 'Kata sandi saat ini wajib diisi.';
+    return { valid: false, error: msg, message: msg };
   }
 
   if (trimmedCurrent !== userActualPassword) {
-    return { valid: false, error: 'Kata sandi saat ini (lama) tidak sesuai.' };
+    const msg = 'Kata sandi saat ini (lama) tidak sesuai.';
+    return { valid: false, error: msg, message: msg };
   }
 
   if (!trimmedNew) {
-    return { valid: false, error: 'Kata sandi baru wajib diisi.' };
+    const msg = 'Kata sandi baru wajib diisi.';
+    return { valid: false, error: msg, message: msg };
   }
 
   if (trimmedNew.length < 6) {
-    return { valid: false, error: 'Kata sandi baru minimal 6 karakter.' };
+    const msg = 'Kata sandi baru minimal 6 karakter.';
+    return { valid: false, error: msg, message: msg };
   }
 
   if (trimmedNew === userActualPassword) {
-    return { valid: false, error: 'Kata sandi baru tidak boleh sama dengan kata sandi lama.' };
+    const msg = 'Kata sandi baru tidak boleh sama dengan kata sandi lama.';
+    return { valid: false, error: msg, message: msg };
   }
 
   if (confirmPassword !== undefined && trimmedNew !== confirmPassword.trim()) {
-    return { valid: false, error: 'Konfirmasi kata sandi baru tidak cocok.' };
+    const msg = 'Konfirmasi kata sandi baru tidak cocok.';
+    return { valid: false, error: msg, message: msg };
   }
 
-  return { valid: true };
+  return { valid: true, message: 'Validasi berhasil.' };
 }

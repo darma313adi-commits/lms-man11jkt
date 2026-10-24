@@ -1,6 +1,25 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, Exam, ExamSubmission, CheatingViolation, StudentAnswer, QuestionItem, LessonMaterial } from '../types';
-import { INITIAL_USERS, INITIAL_EXAMS, INITIAL_SUBMISSIONS, INITIAL_MATERIALS } from '../data/initialData';
+import {
+  User,
+  Exam,
+  ExamSubmission,
+  CheatingViolation,
+  StudentAnswer,
+  QuestionItem,
+  LessonMaterial,
+  RombelKelas,
+  MataPelajaran,
+  KelasMapelPengampu,
+} from '../types';
+import {
+  INITIAL_USERS,
+  INITIAL_EXAMS,
+  INITIAL_SUBMISSIONS,
+  INITIAL_MATERIALS,
+  INITIAL_ROMBEL,
+  INITIAL_MAPEL,
+  INITIAL_KELAS_MAPEL,
+} from '../data/initialData';
 import { calculateExamScore } from '../utils/examScoring';
 import { validatePasswordChange } from '../utils/authUtils';
 
@@ -10,6 +29,9 @@ interface LMSContextType {
   exams: Exam[];
   submissions: ExamSubmission[];
   materials: LessonMaterial[];
+  rombelList: RombelKelas[];
+  mataPelajaranList: MataPelajaran[];
+  kelasMapelPengampuList: KelasMapelPengampu[];
   activeExam: Exam | null;
   activeSubmission: ExamSubmission | null;
   login: (username: string, password: string) => { success: boolean; message?: string };
@@ -18,6 +40,9 @@ interface LMSContextType {
   addUser: (user: Omit<User, 'id' | 'createdAt'>) => void;
   updateUser: (user: User) => void;
   deleteUser: (userId: string) => void;
+  deleteUsers: (userIds: string[]) => void;
+  toggleUserStatus: (userId: string) => void;
+  resetUserPassword: (userId: string, newPassword?: string) => string;
   importUsers: (newUsers: Partial<User>[]) => number;
   changePassword: (
     userId: string,
@@ -25,6 +50,19 @@ interface LMSContextType {
     newPassword: string,
     confirmPassword?: string
   ) => { success: boolean; message: string };
+  // Rombel Management
+  addRombel: (rombelData: Omit<RombelKelas, 'id' | 'createdAt'>) => RombelKelas;
+  updateRombel: (rombel: RombelKelas) => void;
+  deleteRombel: (rombelId: string) => void;
+  // Mata Pelajaran Management
+  addMataPelajaran: (mapelData: Omit<MataPelajaran, 'id' | 'createdAt'>) => MataPelajaran;
+  updateMataPelajaran: (mapel: MataPelajaran) => void;
+  deleteMataPelajaran: (mapelId: string) => void;
+  // Plotting Mapel & Guru per Kelas
+  setKelasMataPelajaran: (kelasNama: string, mapelIds: string[]) => void;
+  assignGuruPengampu: (kelasNama: string, mapelId: string, guruId: string, guruNama: string) => void;
+  removeMapelFromKelas: (kelasNama: string, mapelId: string) => void;
+  // Exam & Materials
   createExam: (examData: Omit<Exam, 'id' | 'createdAt'>) => Exam;
   updateExam: (exam: Exam) => void;
   deleteExam: (examId: string) => void;
@@ -46,6 +84,10 @@ const STORAGE_KEY_USERS = 'educbt_users_v1';
 const STORAGE_KEY_EXAMS = 'educbt_exams_v1';
 const STORAGE_KEY_SUBMISSIONS = 'educbt_submissions_v1';
 const STORAGE_KEY_CURRENT_USER = 'educbt_current_user_v1';
+const STORAGE_KEY_MATERIALS = 'educbt_materials_v1';
+const STORAGE_KEY_ROMBEL = 'educbt_rombel_v1';
+const STORAGE_KEY_MAPEL = 'educbt_mapel_v1';
+const STORAGE_KEY_KELAS_MAPEL = 'educbt_kelas_mapel_v1';
 
 export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<User[]>(() => {
@@ -75,7 +117,6 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   });
 
-  const STORAGE_KEY_MATERIALS = 'educbt_materials_v1';
   const [materials, setMaterials] = useState<LessonMaterial[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_MATERIALS);
@@ -85,11 +126,37 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   });
 
+  const [rombelList, setRombelList] = useState<RombelKelas[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_ROMBEL);
+      return saved ? JSON.parse(saved) : INITIAL_ROMBEL;
+    } catch {
+      return INITIAL_ROMBEL;
+    }
+  });
+
+  const [mataPelajaranList, setMataPelajaranList] = useState<MataPelajaran[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_MAPEL);
+      return saved ? JSON.parse(saved) : INITIAL_MAPEL;
+    } catch {
+      return INITIAL_MAPEL;
+    }
+  });
+
+  const [kelasMapelPengampuList, setKelasMapelPengampuList] = useState<KelasMapelPengampu[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_KELAS_MAPEL);
+      return saved ? JSON.parse(saved) : INITIAL_KELAS_MAPEL;
+    } catch {
+      return INITIAL_KELAS_MAPEL;
+    }
+  });
+
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_CURRENT_USER);
       if (saved) return JSON.parse(saved);
-      // Default auto-login to Admin darma313adi or null
       return null;
     } catch {
       return null;
@@ -117,6 +184,26 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [materials]);
 
   useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_ROMBEL, JSON.stringify(rombelList));
+  }, [rombelList]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_MAPEL, JSON.stringify(mataPelajaranList));
+  }, [mataPelajaranList]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_KELAS_MAPEL, JSON.stringify(kelasMapelPengampuList));
+  }, [kelasMapelPengampuList]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify(submissions));
+  }, [submissions]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_MATERIALS, JSON.stringify(materials));
+  }, [materials]);
+
+  useEffect(() => {
     if (currentUser) {
       localStorage.setItem(STORAGE_KEY_CURRENT_USER, JSON.stringify(currentUser));
     } else {
@@ -128,10 +215,13 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const trimmedUser = username.trim().toLowerCase();
     const trimmedPass = password.trim();
 
-    // Check special admin requirement #11: darma313adi / masdar313
+    // Check special admin requirement #11: darma313adi / masdar313 & any registered user (by username, email, nip, nisn)
     const foundUser = users.find(
       (u) =>
-        (u.username.toLowerCase() === trimmedUser || u.email?.toLowerCase() === trimmedUser) &&
+        (u.username.toLowerCase() === trimmedUser ||
+          u.email?.toLowerCase() === trimmedUser ||
+          u.nip?.toLowerCase() === trimmedUser ||
+          u.nisn?.toLowerCase() === trimmedUser) &&
         u.password === trimmedPass
     );
 
@@ -175,7 +265,292 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const deleteUser = (userId: string) => {
+    const target = users.find((u) => u.id === userId);
+    if (target?.username === 'darma313adi') return; // Lindungi akun admin utama
+
     setUsers((prev) => prev.filter((u) => u.id !== userId));
+
+    // Jika guru dihapus, bersihkan penugasan wali kelas dan plotting
+    if (target?.role === 'guru') {
+      setRombelList((prev) =>
+        prev.map((r) =>
+          r.waliKelasId === userId ? { ...r, waliKelasId: undefined, waliKelasNama: undefined } : r
+        )
+      );
+      setKelasMapelPengampuList((prev) =>
+        prev.map((kmp) =>
+          kmp.guruId === userId ? { ...kmp, guruId: undefined, guruNama: undefined } : kmp
+        )
+      );
+    }
+  };
+
+  const deleteUsers = (userIds: string[]) => {
+    const validIds = userIds.filter((id) => {
+      const u = users.find((user) => user.id === id);
+      return u?.username !== 'darma313adi';
+    });
+    if (validIds.length === 0) return;
+
+    setUsers((prev) => prev.filter((u) => !validIds.includes(u.id)));
+
+    // Bersihkan wali kelas dan plotting jika ada guru yang dihapus
+    setRombelList((prev) =>
+      prev.map((r) =>
+        r.waliKelasId && validIds.includes(r.waliKelasId)
+          ? { ...r, waliKelasId: undefined, waliKelasNama: undefined }
+          : r
+      )
+    );
+    setKelasMapelPengampuList((prev) =>
+      prev.map((kmp) =>
+        kmp.guruId && validIds.includes(kmp.guruId)
+          ? { ...kmp, guruId: undefined, guruNama: undefined }
+          : kmp
+      )
+    );
+  };
+
+  const toggleUserStatus = (userId: string) => {
+    const target = users.find((u) => u.id === userId);
+    if (!target || target.username === 'darma313adi') return;
+    const nextStatus: 'aktif' | 'nonaktif' = target.status === 'aktif' ? 'nonaktif' : 'aktif';
+    setUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, status: nextStatus } : u))
+    );
+  };
+
+  const resetUserPassword = (userId: string, newPassword?: string): string => {
+    const pass = newPassword || '123456';
+    setUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, password: pass } : u))
+    );
+    return pass;
+  };
+
+  const changePassword = (
+    userId: string,
+    currentPasswordInput: string,
+    newPassword: string,
+    confirmPassword?: string
+  ): { success: boolean; message: string } => {
+    const userToUpdate = users.find((u) => u.id === userId);
+    if (!userToUpdate) {
+      return { success: false, message: 'Pengguna tidak ditemukan.' };
+    }
+
+    const validation = validatePasswordChange(
+      currentPasswordInput,
+      userToUpdate.password,
+      newPassword,
+      confirmPassword
+    );
+
+    if (!validation.valid) {
+      return { success: false, message: validation.message || validation.error || 'Kata sandi tidak valid.' };
+    }
+
+    const updatedUser: User = {
+      ...userToUpdate,
+      password: newPassword.trim(),
+    };
+
+    setUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+    if (currentUser?.id === userId) {
+      setCurrentUser(updatedUser);
+    }
+
+    return { success: true, message: 'Kata sandi berhasil diperbarui!' };
+  };
+
+  // --- Rombongan Kelas (Rombel) Management ---
+  const addRombel = (rombelData: Omit<RombelKelas, 'id' | 'createdAt'>): RombelKelas => {
+    const newRombel: RombelKelas = {
+      ...rombelData,
+      id: `rombel_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString(),
+    };
+    setRombelList((prev) => [...prev, newRombel]);
+    return newRombel;
+  };
+
+  const updateRombel = (updated: RombelKelas) => {
+    const oldRombel = rombelList.find((r) => r.id === updated.id);
+    setRombelList((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+
+    // Jika nama kelas berubah, sinkronkan nama kelas di tabel plotting kelasMapelPengampu
+    if (oldRombel && oldRombel.nama !== updated.nama) {
+      setKelasMapelPengampuList((prev) =>
+        prev.map((kmp) => (kmp.kelasNama === oldRombel.nama ? { ...kmp, kelasNama: updated.nama } : kmp))
+      );
+      // Sinkronkan juga pada user siswa
+      setUsers((prev) =>
+        prev.map((u) => (u.kelas === oldRombel.nama ? { ...u, kelas: updated.nama } : u))
+      );
+      // Sinkronkan pada target ujian
+      setExams((prev) =>
+        prev.map((e) => ({
+          ...e,
+          kelasTarget: (e.kelasTarget || []).map((k) => (k === oldRombel.nama ? updated.nama : k)),
+        }))
+      );
+      // Sinkronkan pada kelas ajar guru
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.role === 'guru' && u.kelasAjar
+            ? { ...u, kelasAjar: u.kelasAjar.map((k) => (k === oldRombel.nama ? updated.nama : k)) }
+            : u
+        )
+      );
+    }
+  };
+
+  const deleteRombel = (rombelId: string) => {
+    const target = rombelList.find((r) => r.id === rombelId);
+    setRombelList((prev) => prev.filter((r) => r.id !== rombelId));
+    if (target) {
+      // Hapus alokasi mapel kelas ini
+      setKelasMapelPengampuList((prev) => prev.filter((kmp) => kmp.kelasNama !== target.nama));
+      // Lepas kelas dari siswa agar tidak dangling
+      setUsers((prev) =>
+        prev.map((u) => (u.kelas === target.nama ? { ...u, kelas: undefined } : u))
+      );
+      // Hapus kelas dari target ujian
+      setExams((prev) =>
+        prev.map((e) => ({
+          ...e,
+          kelasTarget: (e.kelasTarget || []).filter((k) => k !== target.nama),
+        }))
+      );
+      // Hapus dari kelas ajar guru
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.role === 'guru' && u.kelasAjar
+            ? { ...u, kelasAjar: u.kelasAjar.filter((k) => k !== target.nama) }
+            : u
+        )
+      );
+    }
+  };
+
+  // --- Mata Pelajaran Management ---
+  const addMataPelajaran = (mapelData: Omit<MataPelajaran, 'id' | 'createdAt'>): MataPelajaran => {
+    const newMapel: MataPelajaran = {
+      ...mapelData,
+      id: `mapel_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString(),
+    };
+    setMataPelajaranList((prev) => [...prev, newMapel]);
+    return newMapel;
+  };
+
+  const updateMataPelajaran = (updated: MataPelajaran) => {
+    const oldMapel = mataPelajaranList.find((m) => m.id === updated.id);
+    setMataPelajaranList((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+    // Sinkronkan nama dan kode di tabel plotting
+    setKelasMapelPengampuList((prev) =>
+      prev.map((kmp) =>
+        kmp.mapelId === updated.id
+          ? { ...kmp, mapelNama: updated.nama, mapelKode: updated.kode }
+          : kmp
+      )
+    );
+    // Sinkronkan nama mapel pada ujian jika berubah
+    if (oldMapel && oldMapel.nama !== updated.nama) {
+      setExams((prev) =>
+        prev.map((e) => (e.mataPelajaran === oldMapel.nama ? { ...e, mataPelajaran: updated.nama } : e))
+      );
+    }
+  };
+
+  const deleteMataPelajaran = (mapelId: string) => {
+    setMataPelajaranList((prev) => prev.filter((m) => m.id !== mapelId));
+    setKelasMapelPengampuList((prev) => prev.filter((kmp) => kmp.mapelId !== mapelId));
+  };
+
+  // --- Plotting Mapel & Guru Pengampu per Kelas ---
+  const setKelasMataPelajaran = (kelasNama: string, mapelIds: string[]) => {
+    setKelasMapelPengampuList((prev) => {
+      // Pertahankan alokasi yang sudah ada di kelas ini bila ID mapelnya tetap dipilih
+      const existingForClass = prev.filter(
+        (kmp) => kmp.kelasNama === kelasNama && mapelIds.includes(kmp.mapelId)
+      );
+      const otherClasses = prev.filter((kmp) => kmp.kelasNama !== kelasNama);
+
+      // Tambahkan mapel yang baru dialokasikan ke kelas
+      const newlyAdded: KelasMapelPengampu[] = [];
+      mapelIds.forEach((mId) => {
+        const alreadyAllocated = existingForClass.find((kmp) => kmp.mapelId === mId);
+        if (!alreadyAllocated) {
+          const mapelObj = mataPelajaranList.find((m) => m.id === mId);
+          if (mapelObj) {
+            newlyAdded.push({
+              id: `kmp_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+              kelasNama,
+              mapelId: mapelObj.id,
+              mapelNama: mapelObj.nama,
+              mapelKode: mapelObj.kode,
+            });
+          }
+        }
+      });
+
+      return [...otherClasses, ...existingForClass, ...newlyAdded];
+    });
+  };
+
+  const assignGuruPengampu = (
+    kelasNama: string,
+    mapelId: string,
+    guruId: string,
+    guruNama: string
+  ) => {
+    setKelasMapelPengampuList((prev) =>
+      prev.map((kmp) => {
+        if (kmp.kelasNama === kelasNama && kmp.mapelId === mapelId) {
+          return {
+            ...kmp,
+            guruId: guruId || undefined,
+            guruNama: guruNama || undefined,
+          };
+        }
+        return kmp;
+      })
+    );
+
+    // Otomatis sinkronkan profil guru terpilih (tambahkan kelasAjar dan update mataPelajaran)
+    if (guruId) {
+      setUsers((prev) =>
+        prev.map((u) => {
+          if (u.id === guruId) {
+            const currentKelasAjar = u.kelasAjar || [];
+            const updatedKelasAjar = currentKelasAjar.includes(kelasNama)
+              ? currentKelasAjar
+              : [...currentKelasAjar, kelasNama];
+
+            const mapelObj = mataPelajaranList.find((m) => m.id === mapelId);
+            const currentMapel = u.mataPelajaran || '';
+            let updatedMapel = currentMapel;
+            if (mapelObj && !currentMapel.toLowerCase().includes(mapelObj.nama.toLowerCase())) {
+              updatedMapel = currentMapel ? `${currentMapel}, ${mapelObj.nama}` : mapelObj.nama;
+            }
+
+            return {
+              ...u,
+              kelasAjar: updatedKelasAjar,
+              mataPelajaran: updatedMapel,
+            };
+          }
+          return u;
+        })
+      );
+    }
+  };
+
+  const removeMapelFromKelas = (kelasNama: string, mapelId: string) => {
+    setKelasMapelPengampuList((prev) =>
+      prev.filter((kmp) => !(kmp.kelasNama === kelasNama && kmp.mapelId === mapelId))
+    );
   };
 
   const importUsers = (newUsers: Partial<User>[]): number => {
@@ -423,10 +798,16 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.removeItem(STORAGE_KEY_SUBMISSIONS);
     localStorage.removeItem(STORAGE_KEY_MATERIALS);
     localStorage.removeItem(STORAGE_KEY_CURRENT_USER);
+    localStorage.removeItem(STORAGE_KEY_ROMBEL);
+    localStorage.removeItem(STORAGE_KEY_MAPEL);
+    localStorage.removeItem(STORAGE_KEY_KELAS_MAPEL);
     setUsers(INITIAL_USERS);
     setExams(INITIAL_EXAMS);
     setSubmissions(INITIAL_SUBMISSIONS);
     setMaterials(INITIAL_MATERIALS);
+    setRombelList(INITIAL_ROMBEL);
+    setMataPelajaranList(INITIAL_MAPEL);
+    setKelasMapelPengampuList(INITIAL_KELAS_MAPEL);
     setCurrentUser(null);
     setActiveExam(null);
     setActiveSubmission(null);
@@ -440,6 +821,9 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         exams,
         submissions,
         materials,
+        rombelList,
+        mataPelajaranList,
+        kelasMapelPengampuList,
         activeExam,
         activeSubmission,
         login,
@@ -448,7 +832,20 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addUser,
         updateUser,
         deleteUser,
+        deleteUsers,
+        toggleUserStatus,
+        resetUserPassword,
         importUsers,
+        changePassword,
+        addRombel,
+        updateRombel,
+        deleteRombel,
+        addMataPelajaran,
+        updateMataPelajaran,
+        deleteMataPelajaran,
+        setKelasMataPelajaran,
+        assignGuruPengampu,
+        removeMapelFromKelas,
         createExam,
         updateExam,
         deleteExam,

@@ -15,13 +15,24 @@ import {
   Copy,
   Check,
   Link as LinkIcon,
+  HelpCircle,
+  Users,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  Globe,
   ExternalLink,
 } from 'lucide-react';
+import {
+  buildLoginUrl,
+  getPublicBaseUrl,
+  getDevBaseUrl,
+  isDevEnvironment,
+} from '../utils/urlHelper';
 
 export const LoginView: React.FC = () => {
-  const { login } = useLMS();
+  const { login, users } = useLMS();
 
-  // Detect role from URL query param if available (?role=admin, ?role=guru, ?role=siswa)
   const [selectedRole, setSelectedRole] = useState<'admin' | 'guru' | 'siswa'>('admin');
   const [username, setUsername] = useState('darma313adi');
   const [password, setPassword] = useState('masdar313');
@@ -29,28 +40,63 @@ export const LoginView: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [showAccountDrawer, setShowAccountDrawer] = useState(true);
+  const [showHelpGuide, setShowHelpGuide] = useState(false);
+  const [accountSearch, setAccountSearch] = useState('');
 
+  // Detect role and specific username from URL query parameters or hash
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const hash = window.location.hash.toLowerCase();
     const roleParam = params.get('role')?.toLowerCase() || (hash.includes('guru') ? 'guru' : hash.includes('siswa') ? 'siswa' : hash.includes('admin') ? 'admin' : null);
+    const userParam = params.get('user') || params.get('username') || params.get('nip') || params.get('nisn');
+
+    if (userParam) {
+      const trimmedTarget = userParam.trim().toLowerCase();
+      const matched = users.find(
+        (u) =>
+          u.username.toLowerCase() === trimmedTarget ||
+          u.email?.toLowerCase() === trimmedTarget ||
+          u.nip?.toLowerCase() === trimmedTarget ||
+          u.nisn?.toLowerCase() === trimmedTarget
+      );
+      if (matched) {
+        setSelectedRole(matched.role);
+        setUsername(matched.username);
+        setPassword(matched.password);
+        return;
+      }
+    }
 
     if (roleParam === 'guru') {
       selectPortal('guru', 'guru_siti', 'guru123');
     } else if (roleParam === 'siswa') {
       selectPortal('siswa', 'siswa_budi', 'siswa123');
-    } else {
+    } else if (roleParam === 'admin') {
       selectPortal('admin', 'darma313adi', 'masdar313');
+    } else {
+      // Default to admin or keep darma313adi
+      setSelectedRole('admin');
+      setUsername('darma313adi');
+      setPassword('masdar313');
     }
-  }, []);
+  }, [users]);
 
   const selectPortal = (role: 'admin' | 'guru' | 'siswa', defaultUser: string, defaultPass: string) => {
     setSelectedRole(role);
     setUsername(defaultUser);
     setPassword(defaultPass);
     setErrorMsg('');
-    // Update URL query parameter without full reload
     const newUrl = `${window.location.pathname}?role=${role}`;
+    window.history.replaceState({ path: newUrl }, '', newUrl);
+  };
+
+  const selectSpecificUser = (user: (typeof users)[0]) => {
+    setSelectedRole(user.role);
+    setUsername(user.username);
+    setPassword(user.password);
+    setErrorMsg('');
+    const newUrl = `${window.location.pathname}?role=${user.role}&user=${encodeURIComponent(user.username)}`;
     window.history.replaceState({ path: newUrl }, '', newUrl);
   };
 
@@ -68,27 +114,45 @@ export const LoginView: React.FC = () => {
     }, 200);
   };
 
-  const getFullLoginLink = (role: 'admin' | 'guru' | 'siswa') => {
-    const origin = window.location.origin;
-    const path = window.location.pathname;
-    return `${origin}${path}?role=${role}`;
+  const getFullLoginLink = (role: 'admin' | 'guru' | 'siswa', specificUser?: string) => {
+    return buildLoginUrl(role, specificUser, true);
   };
 
-  const copyToClipboard = (role: 'admin' | 'guru' | 'siswa') => {
-    const link = getFullLoginLink(role);
+  const copyToClipboard = (key: string, link: string) => {
     navigator.clipboard.writeText(link).catch(() => {});
-    setCopiedLink(role);
+    setCopiedLink(key);
     setTimeout(() => setCopiedLink(null), 2500);
   };
 
+  // Filtered users for quick selector
+  const filteredUsers = users.filter((u) => {
+    if (accountSearch.trim()) {
+      const q = accountSearch.toLowerCase();
+      return (
+        u.name.toLowerCase().includes(q) ||
+        u.username.toLowerCase().includes(q) ||
+        u.role.toLowerCase().includes(q) ||
+        (u.nip && u.nip.includes(q)) ||
+        (u.nisn && u.nisn.includes(q)) ||
+        (u.mataPelajaran && u.mataPelajaran.toLowerCase().includes(q)) ||
+        (u.kelas && u.kelas.toLowerCase().includes(q))
+      );
+    }
+    return u.role === selectedRole;
+  });
+
+  const publicLink = buildLoginUrl(selectedRole, undefined, true);
+  const devLink = buildLoginUrl(selectedRole, undefined, false);
+  const isDev = isDevEnvironment();
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col justify-center py-10 sm:px-6 lg:px-8 relative overflow-hidden">
       {/* Decorative backdrop shapes */}
       <div className="absolute top-0 -left-20 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 -right-20 w-96 h-96 bg-violet-500/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Header Branding MAN 11 Jakarta */}
-      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10 text-center">
+      <div className="sm:mx-auto sm:w-full sm:max-w-2xl relative z-10 text-center px-4">
         <div className="flex justify-center mb-3">
           <div className="w-20 h-20 rounded-2xl bg-white p-1.5 shadow-2xl shadow-indigo-500/30 ring-4 ring-white/10 flex items-center justify-center overflow-hidden">
             <img
@@ -102,16 +166,55 @@ export const LoginView: React.FC = () => {
           MAN 11 Jakarta
         </h2>
         <p className="mt-1 text-sm font-semibold text-indigo-200 tracking-wide">
-          Learning Management System
+          Learning Management System & Computer-Based Testing
         </p>
       </div>
 
-      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4 sm:px-0">
-        <div className="bg-white/95 backdrop-blur-md py-7 px-6 shadow-2xl rounded-3xl sm:px-9 border border-slate-200/80">
+      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-2xl relative z-10 px-4 sm:px-0">
+        <div className="bg-white/95 backdrop-blur-md py-7 px-6 shadow-2xl rounded-3xl sm:px-8 border border-slate-200/80">
+          
+          {/* Solusi Akses Akun Google Lain */}
+          <div className="mb-5 p-4 bg-emerald-50/90 border border-emerald-200 rounded-2xl text-xs text-emerald-950">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="font-bold text-slate-900">
+                  Solusi Tautan untuk Dibuka di Akun Google Lain / Perangkat Lain:
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHelpGuide(!showHelpGuide)}
+                className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-0.5 cursor-pointer shrink-0"
+              >
+                <span>{showHelpGuide ? 'Tutup Info' : 'Baca Solusi'}</span>
+                {showHelpGuide ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+            
+            <p className="mt-1.5 text-[11px] text-slate-600 leading-relaxed">
+              Domain <code className="bg-white px-1.5 py-0.5 rounded text-rose-700 font-mono">ais-dev-...</code> dikunci oleh proteksi Google Cloud IAP khusus untuk akun pemilik (<strong>darma313adi@gmail.com</strong>). Agar siswa atau guru lain dengan akun Google berbeda dapat masuk tanpa error izin, gunakan tautan publik <code className="bg-white px-1.5 py-0.5 rounded text-emerald-700 font-mono font-bold">ais-pre-...</code> di bawah ini:
+            </p>
+
+            {showHelpGuide && (
+              <div className="mt-2.5 pt-2.5 border-t border-emerald-200/70 space-y-1.5 text-[11px] leading-relaxed text-emerald-950">
+                <p>
+                  <strong>Mengapa terjadi error di akun Google lain?</strong>
+                  <br />
+                  Sistem Cloud Run secara otomatis memberlakukan proteksi otentikasi internal pada tautan developer. Sistem kami kini telah <strong>otomatis mengubah tautan berbagi menjadi tautan publik (Shared App URL)</strong> yang dapat dibuka di Chrome, Firefox, Safari, HP Android/iPhone, maupun jendela penyamaran (incognito) tanpa batasan akun Google!
+                </p>
+                <div className="p-2 bg-white rounded-lg border border-emerald-200 text-[10px] space-y-1">
+                  <p>✅ <strong>Tautan Publik (Bisa Diakses Siapa Saja):</strong> <span className="font-mono text-emerald-700 break-all">{publicLink}</span></p>
+                  {isDev && <p>🔒 <strong>Tautan Khusus Developer (Pemilik darma313adi):</strong> <span className="font-mono text-slate-500 break-all">{devLink}</span></p>}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Tautan Login Khusus: Guru, Admin, Siswa */}
           <div className="mb-5">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                 <LinkIcon className="w-3.5 h-3.5 text-indigo-600" />
                 Pilih Portal & Tautan Login:
               </span>
@@ -158,19 +261,20 @@ export const LoginView: React.FC = () => {
               </button>
             </div>
 
-            {/* Kotak Keterangan & Tautan Langsung */}
-            <div className="mt-3 p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700">
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-slate-900">
-                  Tautan Login Bagi {selectedRole === 'admin' ? 'Admin' : selectedRole === 'guru' ? 'Guru' : 'Siswa'}:
+            {/* Kotak Tautan Publik Siap Bagikan */}
+            <div className="mt-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  Tautan Publik untuk Portal {selectedRole === 'admin' ? 'Admin' : selectedRole === 'guru' ? 'Guru' : 'Siswa'}:
                 </span>
                 <button
                   type="button"
-                  onClick={() => copyToClipboard(selectedRole)}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 hover:text-indigo-900"
-                  title="Salin tautan login ini"
+                  onClick={() => copyToClipboard(`role_${selectedRole}`, publicLink)}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 bg-white px-2.5 py-1 rounded-lg border border-emerald-200 cursor-pointer shadow-2xs"
+                  title="Salin tautan publik ini untuk dibagikan ke siswa / guru di akun Google lain"
                 >
-                  {copiedLink === selectedRole ? (
+                  {copiedLink === `role_${selectedRole}` ? (
                     <>
                       <Check className="w-3.5 h-3.5 text-emerald-600" />
                       <span className="text-emerald-700">Tersalin!</span>
@@ -178,19 +282,26 @@ export const LoginView: React.FC = () => {
                   ) : (
                     <>
                       <Copy className="w-3.5 h-3.5" />
-                      <span>Salin Link</span>
+                      <span>Salin Tautan Publik</span>
                     </>
                   )}
                 </button>
               </div>
-              <p className="font-mono text-[11px] text-indigo-900 bg-white p-1.5 rounded-lg border border-slate-200 truncate select-all">
-                {getFullLoginLink(selectedRole)}
+              <p className="font-mono text-[11px] text-emerald-950 bg-white p-2 rounded-lg border border-slate-200 truncate select-all">
+                {publicLink}
               </p>
-              {selectedRole === 'admin' && (
-                <p className="mt-1.5 text-[11px] text-rose-700 font-medium">
-                  👑 Akun Resmi: <span className="font-mono font-bold">darma313adi</span> / <span className="font-mono font-bold">masdar313</span>
-                </p>
-              )}
+              <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
+                <span>🌐 Tautan ini bebas dibuka di semua akun Google tanpa izin khusus.</span>
+                <a
+                  href={publicLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:underline"
+                >
+                  <span>Buka di Tab Baru</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
             </div>
           </div>
 
@@ -270,41 +381,108 @@ export const LoginView: React.FC = () => {
             </div>
           </form>
 
-          {/* Daftar Tautan Login Langsung untuk disalin / dibagikan */}
-          <div className="mt-6 pt-4 border-t border-slate-200">
-            <p className="text-[11px] font-bold text-slate-700 mb-2">Tautan Langsung untuk Dibagikan:</p>
-            <div className="space-y-1.5 text-[11px]">
-              <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded-lg border border-slate-200">
-                <span className="font-semibold text-rose-800">👑 Tautan Login Admin:</span>
-                <button
-                  type="button"
-                  onClick={() => selectPortal('admin', 'darma313adi', 'masdar313')}
-                  className="text-indigo-600 hover:underline font-mono text-[10px]"
-                >
-                  ?role=admin
-                </button>
+          {/* Akun Terdaftar & Tautan Cepat Siap Pakai */}
+          <div className="mt-6 pt-5 border-t border-slate-200">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-indigo-600" />
+                <span className="text-xs font-bold text-slate-800">
+                  Daftar Akun Terdaftar & Siap Pakai:
+                </span>
               </div>
-              <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded-lg border border-slate-200">
-                <span className="font-semibold text-blue-800">👩‍🏫 Tautan Login Guru:</span>
-                <button
-                  type="button"
-                  onClick={() => selectPortal('guru', 'guru_siti', 'guru123')}
-                  className="text-indigo-600 hover:underline font-mono text-[10px]"
-                >
-                  ?role=guru
-                </button>
-              </div>
-              <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded-lg border border-slate-200">
-                <span className="font-semibold text-emerald-800">🎓 Tautan Login Siswa:</span>
-                <button
-                  type="button"
-                  onClick={() => selectPortal('siswa', 'siswa_budi', 'siswa123')}
-                  className="text-indigo-600 hover:underline font-mono text-[10px]"
-                >
-                  ?role=siswa
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowAccountDrawer(!showAccountDrawer)}
+                className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
+              >
+                {showAccountDrawer ? 'Sembunyikan' : 'Tampilkan Semua Akun'}
+              </button>
             </div>
+
+            {showAccountDrawer && (
+              <div className="space-y-3">
+                {/* Search input for accounts */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    value={accountSearch}
+                    onChange={(e) => setAccountSearch(e.target.value)}
+                    placeholder="Cari guru (Siti, Bambang), siswa (Budi, Anita), atau username..."
+                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-1">
+                  {filteredUsers.map((u) => {
+                    const isCurrent = username === u.username;
+                    return (
+                      <div
+                        key={u.id}
+                        className={`p-2.5 rounded-xl border text-xs transition flex flex-col justify-between ${
+                          isCurrent
+                            ? 'bg-indigo-50 border-indigo-400 ring-2 ring-indigo-500/20'
+                            : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-1 mb-1">
+                            <span className="font-bold text-slate-900 truncate">{u.name}</span>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                                u.role === 'admin'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : u.role === 'guru'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-emerald-100 text-emerald-800'
+                              }`}
+                            >
+                              {u.role}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 space-y-0.5">
+                            <p>User: <strong className="font-mono text-slate-700">@{u.username}</strong></p>
+                            {u.mataPelajaran && <p className="text-blue-700 truncate">Mapel: {u.mataPelajaran}</p>}
+                            {u.kelas && <p className="text-emerald-700">Kelas: {u.kelas}</p>}
+                            {u.nip && <p className="text-slate-400">NIP: {u.nip}</p>}
+                          </div>
+                        </div>
+
+                        <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-center justify-between gap-1">
+                          <button
+                            type="button"
+                            onClick={() => selectSpecificUser(u)}
+                            className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] transition cursor-pointer"
+                          >
+                            Pilih Akun Ini
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              copyToClipboard(
+                                `user_${u.username}`,
+                                getFullLoginLink(u.role, u.username)
+                              )
+                            }
+                            className="text-[10px] font-semibold text-indigo-700 hover:text-indigo-900 inline-flex items-center gap-1 cursor-pointer"
+                            title="Salin tautan login langsung untuk akun ini"
+                          >
+                            {copiedLink === `user_${u.username}` ? (
+                              <span className="text-emerald-600 font-bold">✓ Tersalin</span>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                <span>Salin Tautan</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
