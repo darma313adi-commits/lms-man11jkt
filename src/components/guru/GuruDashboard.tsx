@@ -42,6 +42,7 @@ import {
   exportGradesExcel,
   exportItemAnalysisExcel,
 } from '../../utils/fileParser';
+import { exportGradesPdf } from '../../utils/pdfExport';
 import { generateQuestionsWithAI, parseRawTextToQuestions } from '../../utils/aiGenerator';
 import { analyzeExamQuestions } from '../../utils/examScoring';
 import { ChangePasswordModal } from './ChangePasswordModal';
@@ -177,6 +178,57 @@ export const GuruDashboard: React.FC = () => {
     );
     return studentClasses.length > 0 ? studentClasses : ['X MIPA 1', 'X MIPA 2', 'XI MIPA 1'];
   }, [currentUser, exams, materials, users]);
+
+  // Check if current teacher is a homeroom teacher (wali kelas)
+  const myWaliKelasRombel = rombelList.find(
+    (r) =>
+      r.waliKelasId === currentUser?.id ||
+      (r.waliKelasNama && r.waliKelasNama.trim().toLowerCase() === currentUser?.name?.trim().toLowerCase())
+  );
+
+  // Calculate visual statistics per class for the teacher's subject
+  const classVisualStats = React.useMemo(() => {
+    return kelasDiajarList.map((namaKelas) => {
+      const classStudents = users.filter(
+        (u) => u.role === 'siswa' && u.kelas?.trim().toLowerCase() === namaKelas.trim().toLowerCase()
+      );
+      const totalSiswa = classStudents.length;
+
+      // Submissions by students in this class for the teacher's subject
+      const subjectSubs = submissions.filter(
+        (s) =>
+          s.siswaKelas?.trim().toLowerCase() === namaKelas.trim().toLowerCase() &&
+          (!currentUser?.mataPelajaran ||
+            s.mataPelajaran?.toLowerCase() === currentUser.mataPelajaran.toLowerCase())
+      );
+
+      // Student attendance / exam participation
+      const studentIdsWithSubmissions = new Set(subjectSubs.map((s) => s.siswaId || s.siswaNisn));
+      const attendedCount = studentIdsWithSubmissions.size;
+      const attendancePercent = totalSiswa > 0 ? Math.round((attendedCount / totalSiswa) * 100) : 0;
+
+      // Average grade
+      const scores = subjectSubs.map((s) => s.nilai100);
+      const avgScore =
+        scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+
+      // Passing rate
+      const kkmTarget = activeExam?.kkm || 75;
+      const tuntasCount = scores.filter((sc) => sc >= kkmTarget).length;
+      const tuntasPercent = scores.length > 0 ? Math.round((tuntasCount / scores.length) * 100) : 0;
+
+      return {
+        namaKelas,
+        totalSiswa,
+        attendedCount,
+        attendancePercent,
+        avgScore,
+        tuntasPercent,
+        tuntasCount,
+        submissionsCount: subjectSubs.length,
+      };
+    });
+  }, [kelasDiajarList, users, submissions, currentUser, activeExam]);
 
   const handleGenerateAI = async () => {
     setIsAiGenerating(true);
@@ -724,6 +776,173 @@ export const GuruDashboard: React.FC = () => {
               </div>
               <p className="text-2xl font-black text-slate-900">{materials.length}</p>
               <p className="text-[11px] text-slate-500 mt-1">Modul & bahan ajar digital</p>
+            </div>
+          </div>
+
+          {/* WALI KELAS ACCESS CARD (Requirement #4) */}
+          {myWaliKelasRombel && (
+            <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 rounded-3xl p-5 sm:p-6 text-white shadow-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shrink-0 shadow-inner">
+                  <School className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white text-emerald-800 uppercase tracking-wider">
+                      Hak Akses Wali Kelas
+                    </span>
+                    <span className="text-xs text-emerald-100 font-medium">Tahun Ajaran 2024/2025</span>
+                  </div>
+                  <h3 className="text-lg font-black tracking-tight">
+                    Wali Kelas Rombel: {myWaliKelasRombel.nama}
+                  </h3>
+                  <p className="text-xs text-emerald-100 mt-0.5 max-w-xl leading-relaxed">
+                    Sebagai wali kelas {myWaliKelasRombel.nama}, Anda memiliki hak akses istimewa untuk memantau progres belajar, kehadiran, status pengerjaan, dan seluruh nilai ujian siswa perwalian Anda.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedClassForRoster(myWaliKelasRombel.nama);
+                    setActiveTab('siswa_kelas');
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-white text-emerald-800 text-xs font-bold shadow-md hover:bg-emerald-50 transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Users className="w-4 h-4 text-emerald-600" />
+                  <span>Lihat Progres Siswa {myWaliKelasRombel.nama} →</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* RINGKASAN VISUAL STATISTIK & TINGKAT KEHADIRAN SISWA (Requirement #5) */}
+          <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-200 gap-2 mb-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-blue-50 text-blue-700 rounded-lg">
+                    <BarChart3 className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                    Ringkasan Visual Statistik & Tingkat Kehadiran Siswa
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Statistik nilai rata-rata kelas dan tingkat kehadiran/partisipasi siswa untuk mata pelajaran <strong>{currentUser?.mataPelajaran || 'Sains Terpadu'}</strong>.
+                </p>
+              </div>
+              <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 self-start sm:self-auto">
+                Rata-rata Gabungan: {
+                  classVisualStats.filter((c) => c.avgScore !== null).length > 0
+                    ? Math.round(
+                        classVisualStats.filter((c) => c.avgScore !== null).reduce((a, b) => a + (b.avgScore || 0), 0) /
+                        classVisualStats.filter((c) => c.avgScore !== null).length
+                      )
+                    : '-'
+                } / 100
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {classVisualStats.map((st) => (
+                <div
+                  key={st.namaKelas}
+                  className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:shadow-md transition flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="font-extrabold text-sm text-slate-900">{st.namaKelas}</span>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                        {st.totalSiswa} Siswa
+                      </span>
+                    </div>
+
+                    {/* Bar 1: Nilai Rata-rata */}
+                    <div className="mb-3">
+                      <div className="flex justify-between items-center text-xs mb-1">
+                        <span className="text-slate-500 font-semibold text-[11px]">Nilai Rata-Rata:</span>
+                        <span
+                          className={`font-mono font-bold ${
+                            st.avgScore === null
+                              ? 'text-slate-400'
+                              : st.avgScore >= 75
+                              ? 'text-emerald-700'
+                              : st.avgScore >= 60
+                              ? 'text-amber-700'
+                              : 'text-rose-700'
+                          }`}
+                        >
+                          {st.avgScore !== null ? `${st.avgScore} / 100` : 'Belum Ada Nilai'}
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            (st.avgScore || 0) >= 75
+                              ? 'bg-emerald-500'
+                              : (st.avgScore || 0) >= 60
+                              ? 'bg-amber-500'
+                              : 'bg-rose-500'
+                          }`}
+                          style={{ width: `${Math.min(st.avgScore || 0, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Bar 2: Tingkat Kehadiran / Partisipasi */}
+                    <div className="mb-3">
+                      <div className="flex justify-between items-center text-xs mb-1">
+                        <span className="text-slate-500 font-semibold text-[11px]">Tingkat Kehadiran Siswa:</span>
+                        <span className="font-mono font-bold text-blue-700">
+                          {st.attendancePercent}% ({st.attendedCount} / {st.totalSiswa})
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                          style={{ width: `${st.attendancePercent}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Ketuntasan */}
+                    <div className="flex items-center justify-between text-[11px] p-2 rounded-xl bg-white border border-slate-200 text-slate-600 mb-3">
+                      <span>Ketuntasan (KKM {activeExam?.kkm || 75}):</span>
+                      <span className={`font-bold ${st.tuntasPercent >= 75 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {st.tuntasCount} Siswa ({st.tuntasPercent}%)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Quick Action PDF Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!activeExam) {
+                        alert('Pilih atau buat ujian terlebih dahulu!');
+                        return;
+                      }
+                      const classStudents = users.filter(
+                        (u) => u.role === 'siswa' && u.kelas?.trim().toLowerCase() === st.namaKelas.trim().toLowerCase()
+                      );
+                      exportGradesPdf({
+                        exam: activeExam,
+                        submissions,
+                        allStudentsInClass: classStudents,
+                        kelasName: st.namaKelas,
+                        guruName: currentUser?.name || 'Guru Pengampu',
+                        guruNip: currentUser?.nip,
+                      });
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-red-600" />
+                    <span>Unduh Laporan Nilai PDF</span>
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -1682,14 +1901,36 @@ export const GuruDashboard: React.FC = () => {
               </p>
             </div>
 
-            <button
-              onClick={() => exportGradesExcel(examSubmissions, activeExam)}
-              disabled={examSubmissions.length === 0}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition disabled:opacity-50"
-            >
-              <Download className="w-4 h-4" />
-              <span>Unduh Nilai (.xlsx)</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  exportGradesPdf({
+                    exam: activeExam,
+                    submissions: examSubmissions,
+                    allStudentsInClass: users.filter((u) => u.role === 'siswa'),
+                    kelasName: activeExam.kelasTarget[0] || 'Semua Kelas',
+                    guruName: currentUser?.name || 'Guru Pengampu',
+                    guruNip: currentUser?.nip,
+                  });
+                }}
+                disabled={examSubmissions.length === 0}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md transition disabled:opacity-50 cursor-pointer"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Unduh Laporan Nilai (PDF)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => exportGradesExcel(examSubmissions, activeExam)}
+                disabled={examSubmissions.length === 0}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition disabled:opacity-50 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Unduh Nilai (.xlsx)</span>
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">

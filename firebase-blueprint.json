@@ -1,0 +1,161 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile for admin, teacher, or student",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "guru", "siswa"] },
+        "kelas": { "type": "string" },
+        "nip": { "type": "string" },
+        "nisn": { "type": "string" },
+        "mataPelajaran": { "type": "string" },
+        "status": { "type": "string", "enum": ["aktif", "nonaktif"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "username", "name", "role", "status"]
+    },
+    "RombelKelas": {
+      "title": "RombelKelas",
+      "description": "Class room / study group at MAN 11 Jakarta",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nama": { "type": "string" },
+        "tingkat": { "type": "string" },
+        "jurusan": { "type": "string" },
+        "waliKelasId": { "type": "string" },
+        "waliKelasNama": { "type": "string" },
+        "tahunAjaran": { "type": "string" },
+        "kapasitas": { "type": "number" },
+        "keterangan": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "nama", "tingkat", "jurusan"]
+    },
+    "MataPelajaran": {
+      "title": "MataPelajaran",
+      "description": "Academic subject curriculum item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "kode": { "type": "string" },
+        "nama": { "type": "string" },
+        "kategori": { "type": "string" },
+        "kkmDefault": { "type": "number" },
+        "jamPerMinggu": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "kode", "nama", "kategori", "kkmDefault"]
+    },
+    "KelasMapelPengampu": {
+      "title": "KelasMapelPengampu",
+      "description": "Mapping of subject and assigned teacher per class",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "kelasNama": { "type": "string" },
+        "mapelId": { "type": "string" },
+        "mapelNama": { "type": "string" },
+        "mapelKode": { "type": "string" },
+        "guruId": { "type": "string" },
+        "guruNama": { "type": "string" }
+      },
+      "required": ["id", "kelasNama", "mapelId", "mapelNama"]
+    },
+    "Exam": {
+      "title": "Exam",
+      "description": "Summative/formative CBT exam item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "judul": { "type": "string" },
+        "deskripsi": { "type": "string" },
+        "mataPelajaran": { "type": "string" },
+        "durasiMenit": { "type": "number" },
+        "guruId": { "type": "string" },
+        "guruNama": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "aktif", "selesai"] },
+        "kodeUjian": { "type": "string" },
+        "kkm": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "judul", "mataPelajaran", "guruId", "status"]
+    },
+    "LessonMaterial": {
+      "title": "LessonMaterial",
+      "description": "Digital learning module / PDF",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "judul": { "type": "string" },
+        "deskripsi": { "type": "string" },
+        "mataPelajaran": { "type": "string" },
+        "guruId": { "type": "string" },
+        "guruNama": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileSize": { "type": "string" },
+        "tipe": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "judul", "mataPelajaran", "guruId"]
+    },
+    "ExamSubmission": {
+      "title": "ExamSubmission",
+      "description": "Student exam answer sheet and score record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "examId": { "type": "string" },
+        "examJudul": { "type": "string" },
+        "mataPelajaran": { "type": "string" },
+        "siswaId": { "type": "string" },
+        "siswaNama": { "type": "string" },
+        "siswaKelas": { "type": "string" },
+        "siswaNisn": { "type": "string" },
+        "waktuMulai": { "type": "string" },
+        "waktuSelesai": { "type": "string" },
+        "totalSkor": { "type": "number" },
+        "maxSkor": { "type": "number" },
+        "nilai100": { "type": "number" },
+        "status": { "type": "string", "enum": ["sedang_mengerjakan", "sudah_dikumpulkan", "terkunci_curang"] }
+      },
+      "required": ["id", "examId", "siswaId", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Registered user accounts (admin, guru, siswa)"
+    },
+    "/rombels/{rombelId}": {
+      "schema": { "$ref": "#/entities/RombelKelas" },
+      "description": "Class rooms / study groups"
+    },
+    "/mataPelajaran/{mapelId}": {
+      "schema": { "$ref": "#/entities/MataPelajaran" },
+      "description": "Master subjects curriculum"
+    },
+    "/kelasMapelPengampu/{kmpId}": {
+      "schema": { "$ref": "#/entities/KelasMapelPengampu" },
+      "description": "Plotting of subjects and assigned teachers per class"
+    },
+    "/exams/{examId}": {
+      "schema": { "$ref": "#/entities/Exam" },
+      "description": "Assessment exams and question pools"
+    },
+    "/materials/{materialId}": {
+      "schema": { "$ref": "#/entities/LessonMaterial" },
+      "description": "Learning materials and documents"
+    },
+    "/submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/ExamSubmission" },
+      "description": "Student exam submissions and grades"
+    }
+  }
+}

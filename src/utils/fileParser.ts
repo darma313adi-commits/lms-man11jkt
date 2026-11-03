@@ -3,6 +3,7 @@ import { User, QuestionItem, ExamSubmission, ItemAnalysis, Exam } from '../types
 
 /**
  * Parsing file Excel / CSV data pengguna (Guru / Siswa)
+ * Secara presisi mengekstrak nama kelas sesuai yang tertulis di template.
  */
 export async function parseExcelUsers(file: File): Promise<Partial<User>[]> {
   const data = await file.arrayBuffer();
@@ -14,31 +15,119 @@ export async function parseExcelUsers(file: File): Promise<Partial<User>[]> {
   const parsedUsers: Partial<User>[] = [];
 
   for (const row of rawRows) {
-    // Normalisasi kunci header
+    // Normalisasi kunci header untuk pencarian cepat
     const normalized: Record<string, any> = {};
     Object.keys(row).forEach((k) => {
-      normalized[k.trim().toLowerCase().replace(/[\s_]+/g, '')] = row[k];
+      // Hapus spasi, kurung, garis miring, strip, garis bawah
+      const cleanKey = k.trim().toLowerCase().replace(/[\s_()\-/\\]+/g, '');
+      normalized[cleanKey] = row[k];
     });
 
-    const nama = normalized['nama'] || normalized['namalengkap'] || normalized['name'] || '';
-    const username = normalized['username'] || normalized['user'] || normalized['nisn'] || normalized['nip'] || '';
-    const password = normalized['password'] || normalized['pass'] || '123456';
-    const rawRole = String(normalized['role'] || normalized['peran'] || 'siswa').toLowerCase();
-    const role = rawRole.includes('guru') || rawRole.includes('pengajar') ? 'guru' : rawRole.includes('admin') ? 'admin' : 'siswa';
-    const kelas = normalized['kelas'] || normalized['rombel'] || (role === 'siswa' ? 'X MIPA 1' : undefined);
-    const nipNisn = normalized['nip'] || normalized['nisn'] || normalized['nipnisn'] || '';
-    const email = normalized['email'] || `${username || 'user'}@sekolah.sch.id`;
+    // Helper untuk mengambil nilai kolom dengan berbagai variasi nama header
+    const getVal = (aliases: string[], excludeSubstrings: string[] = []): string => {
+      // 1. Cek di normalized dengan exact match
+      for (const a of aliases) {
+        const cleanA = a.toLowerCase().replace(/[\s_()\-/\\]+/g, '');
+        if (normalized[cleanA] !== undefined && String(normalized[cleanA]).trim() !== '') {
+          return String(normalized[cleanA]).trim();
+        }
+      }
+      // 2. Cek di row asli (exact match setelah dibersihkan)
+      for (const origKey of Object.keys(row)) {
+        const cleanK = origKey.trim().toLowerCase().replace(/[\s_()\-/\\]+/g, '');
+        for (const a of aliases) {
+          const cleanA = a.toLowerCase().replace(/[\s_()\-/\\]+/g, '');
+          if (cleanK === cleanA) {
+            const v = row[origKey];
+            if (v !== undefined && v !== null && String(v).trim() !== '') {
+              return String(v).trim();
+            }
+          }
+        }
+      }
+      // 3. Cek di row asli (substring match dengan perlindungan excludeSubstrings)
+      for (const origKey of Object.keys(row)) {
+        const cleanK = origKey.trim().toLowerCase().replace(/[\s_()\-/\\]+/g, '');
+        if (excludeSubstrings.some((ex) => cleanK.includes(ex))) {
+          continue;
+        }
+        for (const a of aliases) {
+          const cleanA = a.toLowerCase().replace(/[\s_()\-/\\]+/g, '');
+          if (cleanK.includes(cleanA)) {
+            const v = row[origKey];
+            if (v !== undefined && v !== null && String(v).trim() !== '') {
+              return String(v).trim();
+            }
+          }
+        }
+      }
+      return '';
+    };
+
+    const nama = getVal(['nama', 'namalengkap', 'name', 'fullname', 'peserta', 'siswa', 'guru']);
+    const username = getVal(['username', 'user', 'nisn', 'nip', 'id', 'nomorinduk']);
+    const password = getVal(['password', 'pass', 'sandi', 'katasandi']) || '123456';
+    const rawRole = getVal(['role', 'peran', 'jabatan', 'status']).toLowerCase() || 'siswa';
+    const role: 'guru' | 'siswa' | 'admin' =
+      rawRole.includes('guru') || rawRole.includes('pengajar') || rawRole.includes('teacher')
+        ? 'guru'
+        : rawRole.includes('admin')
+        ? 'admin'
+        : 'siswa';
+
+    // EKSTRAK KELAS DARI TEMPLATE:
+    // Mendukung variasi: "Kelas", "Kelas (khusus siswa)", "Kelas/Rombel", "Rombel", "Rombongan Belajar", "Kelas Siswa", dll.
+    const rawKelas = getVal(
+      [
+        'kelas',
+        'kelaskhusussiswa',
+        'kelasrombel',
+        'rombelkelas',
+        'rombel',
+        'namarombel',
+        'rombonganbelajar',
+        'rombongan',
+        'kelassiswa',
+        'namakelas',
+        'tingkatkelas',
+        'tingkat',
+        'class',
+        'section',
+        'ruangkelas',
+        'classroom',
+      ],
+      ['ajar', 'pengampu', 'ampu'] // hindari kolom guru "kelas yang diajar" terbaca sebagai kelas siswa
+    );
+
+    const nipNisn = getVal(['nip', 'nisn', 'nipnisn', 'nomorinduk', 'noinduk']);
+    const email = getVal(['email', 'surel']) || `${username || 'user'}@sekolah.sch.id`;
+    const mataPelajaran = getVal(['matapelajaran', 'mapel', 'subject', 'pelajaran']);
 
     if (nama && (username || nipNisn)) {
+      const finalUsername = String(username || nipNisn).trim().toLowerCase().replace(/\s+/g, '_');
+      
+      // Kelas hanya untuk siswa, atau jika guru untuk kelasAjar
+      const cleanKelas = rawKelas ? rawKelas.trim().replace(/\s+/g, ' ') : undefined;
+      const finalKelas = role === 'siswa' && cleanKelas ? cleanKelas : undefined;
+      
+      const teacherKelasAjar =
+        getVal(['kelasyangdiajar', 'kelasajar', 'kelasdiampu', 'daftarkelas', 'daftarruang']) || cleanKelas;
+      const finalKelasAjar =
+        role === 'guru' && teacherKelasAjar
+          ? teacherKelasAjar.split(',').map((k) => k.trim()).filter(Boolean)
+          : undefined;
+
       parsedUsers.push({
         name: String(nama).trim(),
-        username: String(username || nipNisn).trim().toLowerCase().replace(/\s+/g, '_'),
+        username: finalUsername,
         password: String(password).trim(),
         role: role as any,
-        kelas: kelas ? String(kelas).trim() : undefined,
-        nip: role === 'guru' ? String(nipNisn).trim() : undefined,
-        nisn: role === 'siswa' ? String(nipNisn).trim() : undefined,
+        kelas: finalKelas,
+        kelasAjar: finalKelasAjar,
+        nip: role === 'guru' ? (nipNisn ? String(nipNisn).trim() : undefined) : undefined,
+        nisn: role === 'siswa' ? (nipNisn ? String(nipNisn).trim() : finalUsername) : undefined,
         email: String(email).trim(),
+        mataPelajaran: role === 'guru' ? (mataPelajaran ? String(mataPelajaran).trim() : undefined) : undefined,
         status: 'aktif',
       });
     }
@@ -56,8 +145,8 @@ export function downloadUserTemplateExcel() {
       'Nama Lengkap': 'Drs. H. Mulyadi, M.Pd',
       'Username': 'guru_mulyadi',
       'Password': 'password123',
-      'Role (guru/siswa)': 'guru',
-      'Kelas (khusus siswa)': '',
+      'Role': 'guru',
+      'Kelas': '',
       'NIP / NISN': '197508122000031002',
       'Email': 'mulyadi@sekolah.sch.id',
       'Mata Pelajaran': 'Fisika',
@@ -66,8 +155,8 @@ export function downloadUserTemplateExcel() {
       'Nama Lengkap': 'Ahmad Fauzi',
       'Username': 'ahmad_fauzi',
       'Password': 'password123',
-      'Role (guru/siswa)': 'siswa',
-      'Kelas (khusus siswa)': 'X MIPA 1',
+      'Role': 'siswa',
+      'Kelas': 'X MIPA 1',
       'NIP / NISN': '0067823411',
       'Email': 'ahmad.fauzi@siswa.sch.id',
       'Mata Pelajaran': '',
@@ -76,8 +165,8 @@ export function downloadUserTemplateExcel() {
       'Nama Lengkap': 'Rani Anggraini',
       'Username': 'rani_anggraini',
       'Password': 'password123',
-      'Role (guru/siswa)': 'siswa',
-      'Kelas (khusus siswa)': 'X MIPA 1',
+      'Role': 'siswa',
+      'Kelas': 'X MIPA 2',
       'NIP / NISN': '0067823412',
       'Email': 'rani.a@siswa.sch.id',
       'Mata Pelajaran': '',
@@ -86,10 +175,30 @@ export function downloadUserTemplateExcel() {
       'Nama Lengkap': 'Bagus Perkasa',
       'Username': 'bagus_p',
       'Password': 'password123',
-      'Role (guru/siswa)': 'siswa',
-      'Kelas (khusus siswa)': 'X MIPA 2',
+      'Role': 'siswa',
+      'Kelas': 'XI MIPA 1',
       'NIP / NISN': '0067823413',
       'Email': 'bagus.p@siswa.sch.id',
+      'Mata Pelajaran': '',
+    },
+    {
+      'Nama Lengkap': 'Dewi Lestari',
+      'Username': 'dewi_lestari',
+      'Password': 'password123',
+      'Role': 'siswa',
+      'Kelas': 'XI MIPA 2',
+      'NIP / NISN': '0067823414',
+      'Email': 'dewi.l@siswa.sch.id',
+      'Mata Pelajaran': '',
+    },
+    {
+      'Nama Lengkap': 'Rizky Pratama',
+      'Username': 'rizky_p',
+      'Password': 'password123',
+      'Role': 'siswa',
+      'Kelas': 'XII MIPA 1',
+      'NIP / NISN': '0067823415',
+      'Email': 'rizky.p@siswa.sch.id',
       'Mata Pelajaran': '',
     },
   ];
@@ -98,6 +207,59 @@ export function downloadUserTemplateExcel() {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Data Pengguna');
   XLSX.writeFile(wb, 'Template_Import_Pengguna_LMS.xlsx');
+}
+
+/**
+ * Download Template Khusus Akun Guru / Pendidik
+ */
+export function downloadGuruTemplateExcel() {
+  const sampleTeachers = [
+    {
+      'Nama Lengkap (dengan Gelar)': 'Dra. Hj. Siti Nurhaliza, M.Pd',
+      'Username': 'guru_siti',
+      'Password': 'password123',
+      'Role': 'guru',
+      'NIP': '197604122003122001',
+      'Email': 'siti.nurhaliza@man11jakarta.sch.id',
+      'Mata Pelajaran Diampu': 'Biologi',
+      'Kelas yang Diajar': 'X MIPA 1, X MIPA 2, XI MIPA 1',
+    },
+    {
+      'Nama Lengkap (dengan Gelar)': 'Ahmad Fauzan, S.Pd, M.Si',
+      'Username': 'guru_fauzan',
+      'Password': 'password123',
+      'Role': 'guru',
+      'NIP': '198103192008011005',
+      'Email': 'ahmad.fauzan@man11jakarta.sch.id',
+      'Mata Pelajaran Diampu': 'Fisika',
+      'Kelas yang Diajar': 'X MIPA 1, X MIPA 2',
+    },
+    {
+      'Nama Lengkap (dengan Gelar)': 'Nurul Hidayah, S.Pd',
+      'Username': 'guru_nurul',
+      'Password': 'password123',
+      'Role': 'guru',
+      'NIP': '198509212010012008',
+      'Email': 'nurul.hidayah@man11jakarta.sch.id',
+      'Mata Pelajaran Diampu': 'Kimia',
+      'Kelas yang Diajar': 'XI MIPA 1, XI MIPA 2',
+    },
+    {
+      'Nama Lengkap (dengan Gelar)': 'Rahmat Hidayat, M.Kom',
+      'Username': 'guru_rahmat',
+      'Password': 'password123',
+      'Role': 'guru',
+      'NIP': '198811052014021003',
+      'Email': 'rahmat.h@man11jakarta.sch.id',
+      'Mata Pelajaran Diampu': 'Informatika',
+      'Kelas yang Diajar': 'X MIPA 1, X MIPA 2, X IPS 1',
+    },
+  ];
+
+  const ws = XLSX.utils.json_to_sheet(sampleTeachers);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Template Guru');
+  XLSX.writeFile(wb, 'Template_Import_Akun_Guru_MAN11.xlsx');
 }
 
 /**

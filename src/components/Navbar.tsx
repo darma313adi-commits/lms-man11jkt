@@ -59,59 +59,61 @@ export const Navbar: React.FC = () => {
 
         {/* Right side controls */}
         <div className="flex items-center gap-3">
-          {/* Quick Demo Role Switcher */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setSwitchOpen(!switchOpen);
-                setDropdownOpen(false);
-              }}
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
-              title="Ganti Akun Demo Pengujian Cepat"
-              aria-label="Ganti Akun Cepat"
-            >
-              <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Ganti Akun Demo</span>
-              <ChevronDown className="w-3.5 h-3.5 opacity-60" />
-            </button>
+          {/* Quick Demo Role Switcher - ADMIN ONLY */}
+          {currentUser.role === 'admin' && (
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setSwitchOpen(!switchOpen);
+                  setDropdownOpen(false);
+                }}
+                className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+                title="Ganti Akun Demo Pengujian Cepat (Khusus Admin)"
+                aria-label="Ganti Akun Cepat"
+              >
+                <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Ganti Akun Demo</span>
+                <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+              </button>
 
-            {switchOpen && (
-              <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-2 z-50 animate-in fade-in slide-in-from-top-1">
-                <div className="px-3 py-2 border-b border-slate-100 mb-1">
-                  <p className="text-xs font-bold text-slate-800">Pilih Akun Demo Uji Coba</p>
-                  <p className="text-[11px] text-slate-500">Pindah peran langsung untuk menguji fitur</p>
+              {switchOpen && (
+                <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-2 z-50 animate-in fade-in slide-in-from-top-1">
+                  <div className="px-3 py-2 border-b border-slate-100 mb-1">
+                    <p className="text-xs font-bold text-slate-800">Pilih Akun Demo Uji Coba</p>
+                    <p className="text-[11px] text-slate-500">Pindah peran langsung untuk menguji fitur</p>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-1">
+                    {users.map((u) => (
+                      <button
+                        key={u.id}
+                        onClick={() => {
+                          switchUser(u);
+                          setSwitchOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between transition ${
+                          currentUser.id === u.id
+                            ? 'bg-indigo-50 text-indigo-700 font-semibold'
+                            : 'hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <div>
+                          <p className="font-medium">{u.name}</p>
+                          <p className="text-[10px] text-slate-400">
+                            @{u.username} • {u.role.toUpperCase()} {u.kelas ? `(${u.kelas})` : ''}
+                          </p>
+                        </div>
+                        {u.role === 'admin' && (
+                          <span className="text-[10px] bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded font-bold">
+                            Admin
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="max-h-60 overflow-y-auto space-y-1">
-                  {users.map((u) => (
-                    <button
-                      key={u.id}
-                      onClick={() => {
-                        switchUser(u);
-                        setSwitchOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between transition ${
-                        currentUser.id === u.id
-                          ? 'bg-indigo-50 text-indigo-700 font-semibold'
-                          : 'hover:bg-slate-50 text-slate-700'
-                      }`}
-                    >
-                      <div>
-                        <p className="font-medium">{u.name}</p>
-                        <p className="text-[10px] text-slate-400">
-                          @{u.username} • {u.role.toUpperCase()} {u.kelas ? `(${u.kelas})` : ''}
-                        </p>
-                      </div>
-                      {u.role === 'admin' && (
-                        <span className="text-[10px] bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded font-bold">
-                          Admin
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           {/* Current User Info */}
           <div className="relative">
@@ -160,24 +162,26 @@ export const Navbar: React.FC = () => {
                       setShowPasswordModal(true);
                       setDropdownOpen(false);
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-indigo-700 hover:bg-indigo-50 rounded-lg transition font-medium"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-indigo-700 hover:bg-indigo-50 rounded-lg transition font-medium cursor-pointer"
                   >
                     <Lock className="w-3.5 h-3.5 text-indigo-600" />
                     <span>Ubah Kata Sandi</span>
                   </button>
 
-                  <button
-                    onClick={() => {
-                      if (confirm('Reset seluruh data ke kondisi awal (akun darma313adi, soal demo, dan hasil)?')) {
-                        resetAllDataToDefault();
-                        setDropdownOpen(false);
-                      }
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Reset Data ke Awal</span>
-                  </button>
+                  {currentUser.role === 'admin' && (
+                    <button
+                      onClick={() => {
+                        if (confirm('Reset seluruh data ke kondisi awal (akun darma313adi, soal demo, dan hasil)?')) {
+                          resetAllDataToDefault();
+                          setDropdownOpen(false);
+                        }
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Reset Data ke Awal</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => {

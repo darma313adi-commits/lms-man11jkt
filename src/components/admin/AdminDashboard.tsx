@@ -22,15 +22,18 @@ import {
   Layers,
   Sparkles,
   UserCheck,
+  ArrowRightLeft,
 } from 'lucide-react';
 import {
   parseExcelUsers,
   downloadUserTemplateExcel,
+  downloadGuruTemplateExcel,
   exportUsersExcel,
 } from '../../utils/fileParser';
 import { RombelManager } from './RombelManager';
 import { MapelManager } from './MapelManager';
 import { PlottingGuruManager } from './PlottingGuruManager';
+import { DaftarSiswaPerKelas } from '../guru/DaftarSiswaPerKelas';
 
 export const AdminDashboard: React.FC = () => {
   const {
@@ -47,7 +50,7 @@ export const AdminDashboard: React.FC = () => {
   } = useLMS();
 
   const [activeTab, setActiveTab] = useState<
-    'daftar' | 'rombel' | 'mapel' | 'plotting' | 'import' | 'manual'
+    'daftar' | 'siswa_kelas' | 'rombel' | 'mapel' | 'plotting' | 'import' | 'manual'
   >('daftar');
   const [plottingTargetKelas, setPlottingTargetKelas] = useState<string>('X MIPA 1');
   const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
@@ -190,7 +193,7 @@ export const AdminDashboard: React.FC = () => {
           const name = parts[0].replace(/^\d+[\.\)]\s*/, '');
           const username = parts[1].toLowerCase().replace(/\s+/g, '_');
           const role = (parts[2] || 'siswa').toLowerCase().includes('guru') ? 'guru' : 'siswa';
-          const kelas = parts[3] || 'X MIPA 1';
+          const kelas = parts[3]?.trim() || undefined;
           const password = parts[4] || '123456';
 
           if (name && username) {
@@ -380,6 +383,18 @@ export const AdminDashboard: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setActiveTab('siswa_kelas')}
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition shrink-0 ${
+            activeTab === 'siswa_kelas'
+              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40 rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <GraduationCap className="w-4 h-4 text-emerald-600" />
+          <span>Siswa per Kelas ({users.filter((u) => u.role === 'siswa').length})</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('rombel')}
           className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition shrink-0 ${
             activeTab === 'rombel'
@@ -544,6 +559,34 @@ export const AdminDashboard: React.FC = () => {
                     <td className="px-4 py-3 font-mono text-slate-600">{u.nip || u.nisn || '-'}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        {u.username !== 'darma313adi' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextRole: UserRole = u.role === 'siswa' ? 'guru' : 'siswa';
+                              const promptText =
+                                u.role === 'siswa'
+                                  ? `Ubah peran "${u.name}" dari Siswa menjadi Guru?`
+                                  : `Ubah peran "${u.name}" dari Guru menjadi Siswa?`;
+                              if (confirm(promptText)) {
+                                updateUser({
+                                  ...u,
+                                  role: nextRole,
+                                  kelas: nextRole === 'siswa' ? (u.kelas || 'X MIPA 1') : undefined,
+                                  mataPelajaran: nextRole === 'guru' ? (u.mataPelajaran || 'Biologi') : undefined,
+                                });
+                              }
+                            }}
+                            className={`p-1.5 rounded-lg transition cursor-pointer ${
+                              u.role === 'siswa'
+                                ? 'text-blue-600 hover:bg-blue-100'
+                                : 'text-emerald-600 hover:bg-emerald-100'
+                            }`}
+                            title={u.role === 'siswa' ? 'Ubah Akun Ini Menjadi Guru' : 'Ubah Akun Ini Menjadi Siswa'}
+                          >
+                            <ArrowRightLeft className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           onClick={() => setEditingUser(u)}
                           className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition"
@@ -572,6 +615,11 @@ export const AdminDashboard: React.FC = () => {
             </table>
           </div>
         </div>
+      )}
+
+      {/* Tab: Siswa per Kelas (Requirement #5) */}
+      {activeTab === 'siswa_kelas' && (
+        <DaftarSiswaPerKelas />
       )}
 
       {/* Tab: Rombongan Kelas (Rombel) */}
@@ -614,14 +662,25 @@ export const AdminDashboard: React.FC = () => {
                 <p className="mt-1 text-[11px] text-emerald-700">
                   Unduh template resmi kami untuk memastikan susunan kolom data rapi dan presisi.
                 </p>
-                <button
-                  type="button"
-                  onClick={downloadUserTemplateExcel}
-                  className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 text-white font-bold text-xs hover:bg-emerald-800 transition"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Unduh Template_Import_Pengguna.xlsx</span>
-                </button>
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={downloadUserTemplateExcel}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 text-white font-bold text-xs hover:bg-emerald-800 transition cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Template Siswa & Umum (.xlsx)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={downloadGuruTemplateExcel}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-700 text-white font-bold text-xs hover:bg-blue-800 transition cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Template Khusus Akun Guru (.xlsx)</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -911,6 +970,74 @@ export const AdminDashboard: React.FC = () => {
                   />
                 </div>
               </div>
+
+              {/* Role Switcher (Requirement #5: Admin bisa mengubah akun siswa menjadi guru atau sebaliknya) */}
+              {editingUser.username !== 'darma313adi' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Peran Akun (Role: Siswa ↔ Guru)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingUser({
+                          ...editingUser,
+                          role: 'guru',
+                          kelas: undefined,
+                          mataPelajaran: editingUser.mataPelajaran || 'Biologi',
+                        })
+                      }
+                      className={`py-2 px-3 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                        editingUser.role === 'guru'
+                          ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500/20'
+                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>Akun Guru</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingUser({
+                          ...editingUser,
+                          role: 'siswa',
+                          mataPelajaran: undefined,
+                          kelas: editingUser.kelas || 'X MIPA 1',
+                        })
+                      }
+                      className={`py-2 px-3 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                        editingUser.role === 'siswa'
+                          ? 'bg-emerald-50 border-emerald-500 text-emerald-700 ring-2 ring-emerald-500/20'
+                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <GraduationCap className="w-3.5 h-3.5" />
+                      <span>Akun Siswa</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {editingUser.role === 'guru' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Mata Pelajaran Diampu</label>
+                  <select
+                    value={editingUser.mataPelajaran || ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, mataPelajaran: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white font-medium"
+                  >
+                    <option value="">-- Pilih Mata Pelajaran --</option>
+                    {mataPelajaranList.map((m) => (
+                      <option key={m.id} value={m.nama}>
+                        {m.nama} ({m.kode})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {editingUser.role === 'siswa' && (
                 <div>

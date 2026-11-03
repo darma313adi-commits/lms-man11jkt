@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import {
   User,
   Exam,
@@ -22,6 +22,15 @@ import {
 } from '../data/initialData';
 import { calculateExamScore } from '../utils/examScoring';
 import { validatePasswordChange } from '../utils/authUtils';
+import {
+  collection,
+  doc,
+  setDoc,
+  deleteDoc,
+  onSnapshot,
+  writeBatch,
+} from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface LMSContextType {
   currentUser: User | null;
@@ -34,6 +43,7 @@ interface LMSContextType {
   kelasMapelPengampuList: KelasMapelPengampu[];
   activeExam: Exam | null;
   activeSubmission: ExamSubmission | null;
+  isCloudSynced: boolean;
   login: (username: string, password: string) => { success: boolean; message?: string };
   logout: () => void;
   switchUser: (user: User) => void;
@@ -80,14 +90,34 @@ interface LMSContextType {
 
 const LMSContext = createContext<LMSContextType | undefined>(undefined);
 
+const STORAGE_KEY_CURRENT_USER = 'educbt_current_user_v1';
 const STORAGE_KEY_USERS = 'educbt_users_v1';
 const STORAGE_KEY_EXAMS = 'educbt_exams_v1';
 const STORAGE_KEY_SUBMISSIONS = 'educbt_submissions_v1';
-const STORAGE_KEY_CURRENT_USER = 'educbt_current_user_v1';
 const STORAGE_KEY_MATERIALS = 'educbt_materials_v1';
 const STORAGE_KEY_ROMBEL = 'educbt_rombel_v1';
 const STORAGE_KEY_MAPEL = 'educbt_mapel_v1';
 const STORAGE_KEY_KELAS_MAPEL = 'educbt_kelas_mapel_v1';
+
+/**
+ * Clean data for Firestore to avoid "Unsupported field value: undefined" errors
+ */
+function cleanForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) return null as any;
+  if (Array.isArray(data)) {
+    return data.map((item) => cleanForFirestore(item)) as any;
+  }
+  if (typeof data === 'object') {
+    const res: any = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== undefined) {
+        res[key] = cleanForFirestore(value);
+      }
+    }
+    return res;
+  }
+  return data;
+}
 
 export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<User[]>(() => {
@@ -165,8 +195,10 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const [activeExam, setActiveExam] = useState<Exam | null>(null);
   const [activeSubmission, setActiveSubmission] = useState<ExamSubmission | null>(null);
+  const [isCloudSynced, setIsCloudSynced] = useState<boolean>(false);
+  const isInitialSeedDone = useRef<boolean>(false);
 
-  // Sync to localStorage
+  // Sync state to localStorage as fast client-cache
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
   }, [users]);
@@ -196,20 +228,153 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [kelasMapelPengampuList]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify(submissions));
-  }, [submissions]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_MATERIALS, JSON.stringify(materials));
-  }, [materials]);
-
-  useEffect(() => {
     if (currentUser) {
       localStorage.setItem(STORAGE_KEY_CURRENT_USER, JSON.stringify(currentUser));
     } else {
       localStorage.removeItem(STORAGE_KEY_CURRENT_USER);
     }
   }, [currentUser]);
+
+  // --- Real-time Firestore Listeners & Cloud Sync ---
+  useEffect(() => {
+    if (!db) return;
+
+    // Helper to seed cloud if completely blank
+    const seedCloudIfEmpty = async () => {
+      if (isInitialSeedDone.current) return;
+      isInitialSeedDone.current = true;
+      try {
+        const batch = writeBatch(db);
+        INITIAL_USERS.forEach((u) => {
+          batch.set(doc(db, 'users', u.id), cleanForFirestore(u));
+        });
+        INITIAL_ROMBEL.forEach((r) => {
+          batch.set(doc(db, 'rombels', r.id), cleanForFirestore(r));
+        });
+        INITIAL_MAPEL.forEach((m) => {
+          batch.set(doc(db, 'mataPelajaran', m.id), cleanForFirestore(m));
+        });
+        INITIAL_KELAS_MAPEL.forEach((kmp) => {
+          batch.set(doc(db, 'kelasMapelPengampu', kmp.id), cleanForFirestore(kmp));
+        });
+        INITIAL_EXAMS.forEach((e) => {
+          batch.set(doc(db, 'exams', e.id), cleanForFirestore(e));
+        });
+        INITIAL_MATERIALS.forEach((m) => {
+          batch.set(doc(db, 'materials', m.id), cleanForFirestore(m));
+        });
+        INITIAL_SUBMISSIONS.forEach((s) => {
+          batch.set(doc(db, 'submissions', s.id), cleanForFirestore(s));
+        });
+        await batch.commit();
+        setIsCloudSynced(true);
+      } catch (err) {
+        console.warn('Auto-seed cloud error:', err);
+      }
+    };
+
+    // 1. Users Listener
+    const unsubUsers = onSnapshot(
+      collection(db, 'users'),
+      (snapshot) => {
+        setIsCloudSynced(true);
+        if (snapshot.empty) {
+          seedCloudIfEmpty();
+        } else {
+          const loaded = snapshot.docs.map((d) => d.data() as User);
+          // Preserve darma313adi guarantee
+          if (!loaded.some((u) => u.username === 'darma313adi')) {
+            const admin = INITIAL_USERS[0];
+            setDoc(doc(db, 'users', admin.id), cleanForFirestore(admin)).catch(() => {});
+            loaded.unshift(admin);
+          }
+          setUsers(loaded);
+          // Update currentUser if matched
+          if (currentUser) {
+            const updatedSelf = loaded.find((u) => u.id === currentUser.id);
+            if (updatedSelf) setCurrentUser(updatedSelf);
+          }
+        }
+      },
+      (err) => console.warn('Firestore Users Listener error:', err)
+    );
+
+    // 2. Rombel Listener
+    const unsubRombel = onSnapshot(
+      collection(db, 'rombels'),
+      (snapshot) => {
+        if (!snapshot.empty) {
+          setRombelList(snapshot.docs.map((d) => d.data() as RombelKelas));
+        }
+      },
+      (err) => console.warn('Firestore Rombels Listener error:', err)
+    );
+
+    // 3. Mata Pelajaran Listener
+    const unsubMapel = onSnapshot(
+      collection(db, 'mataPelajaran'),
+      (snapshot) => {
+        if (!snapshot.empty) {
+          setMataPelajaranList(snapshot.docs.map((d) => d.data() as MataPelajaran));
+        }
+      },
+      (err) => console.warn('Firestore Mapel Listener error:', err)
+    );
+
+    // 4. Kelas Mapel Pengampu Listener
+    const unsubKelasMapel = onSnapshot(
+      collection(db, 'kelasMapelPengampu'),
+      (snapshot) => {
+        if (!snapshot.empty) {
+          setKelasMapelPengampuList(snapshot.docs.map((d) => d.data() as KelasMapelPengampu));
+        }
+      },
+      (err) => console.warn('Firestore Plotting Listener error:', err)
+    );
+
+    // 5. Exams Listener
+    const unsubExams = onSnapshot(
+      collection(db, 'exams'),
+      (snapshot) => {
+        if (!snapshot.empty) {
+          setExams(snapshot.docs.map((d) => d.data() as Exam));
+        }
+      },
+      (err) => console.warn('Firestore Exams Listener error:', err)
+    );
+
+    // 6. Materials Listener
+    const unsubMaterials = onSnapshot(
+      collection(db, 'materials'),
+      (snapshot) => {
+        if (!snapshot.empty) {
+          setMaterials(snapshot.docs.map((d) => d.data() as LessonMaterial));
+        }
+      },
+      (err) => console.warn('Firestore Materials Listener error:', err)
+    );
+
+    // 7. Submissions Listener
+    const unsubSubmissions = onSnapshot(
+      collection(db, 'submissions'),
+      (snapshot) => {
+        if (!snapshot.empty) {
+          setSubmissions(snapshot.docs.map((d) => d.data() as ExamSubmission));
+        }
+      },
+      (err) => console.warn('Firestore Submissions Listener error:', err)
+    );
+
+    return () => {
+      unsubUsers();
+      unsubRombel();
+      unsubMapel();
+      unsubKelasMapel();
+      unsubExams();
+      unsubMaterials();
+      unsubSubmissions();
+    };
+  }, []);
 
   const login = (username: string, password: string) => {
     const trimmedUser = username.trim().toLowerCase();
@@ -255,6 +420,11 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
     };
     setUsers((prev) => [newUser, ...prev]);
+
+    // Direct write to Cloud Firestore
+    setDoc(doc(db, 'users', newUser.id), cleanForFirestore(newUser)).catch((err) =>
+      console.error('Failed to sync newUser to Firestore:', err)
+    );
   };
 
   const updateUser = (updated: User) => {
@@ -262,6 +432,11 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (currentUser?.id === updated.id) {
       setCurrentUser(updated);
     }
+
+    // Direct write to Cloud Firestore
+    setDoc(doc(db, 'users', updated.id), cleanForFirestore(updated)).catch((err) =>
+      console.error('Failed to update user in Firestore:', err)
+    );
   };
 
   const deleteUser = (userId: string) => {
@@ -270,17 +445,32 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setUsers((prev) => prev.filter((u) => u.id !== userId));
 
+    // Delete in Cloud Firestore
+    deleteDoc(doc(db, 'users', userId)).catch((err) =>
+      console.error('Failed to delete user in Firestore:', err)
+    );
+
     // Jika guru dihapus, bersihkan penugasan wali kelas dan plotting
     if (target?.role === 'guru') {
       setRombelList((prev) =>
-        prev.map((r) =>
-          r.waliKelasId === userId ? { ...r, waliKelasId: undefined, waliKelasNama: undefined } : r
-        )
+        prev.map((r) => {
+          if (r.waliKelasId === userId) {
+            const updatedR = { ...r, waliKelasId: undefined, waliKelasNama: undefined };
+            setDoc(doc(db, 'rombels', r.id), cleanForFirestore(updatedR)).catch(() => {});
+            return updatedR;
+          }
+          return r;
+        })
       );
       setKelasMapelPengampuList((prev) =>
-        prev.map((kmp) =>
-          kmp.guruId === userId ? { ...kmp, guruId: undefined, guruNama: undefined } : kmp
-        )
+        prev.map((kmp) => {
+          if (kmp.guruId === userId) {
+            const updatedK = { ...kmp, guruId: undefined, guruNama: undefined };
+            setDoc(doc(db, 'kelasMapelPengampu', kmp.id), cleanForFirestore(updatedK)).catch(() => {});
+            return updatedK;
+          }
+          return kmp;
+        })
       );
     }
   };
@@ -294,20 +484,30 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setUsers((prev) => prev.filter((u) => !validIds.includes(u.id)));
 
+    validIds.forEach((id) => {
+      deleteDoc(doc(db, 'users', id)).catch(() => {});
+    });
+
     // Bersihkan wali kelas dan plotting jika ada guru yang dihapus
     setRombelList((prev) =>
-      prev.map((r) =>
-        r.waliKelasId && validIds.includes(r.waliKelasId)
-          ? { ...r, waliKelasId: undefined, waliKelasNama: undefined }
-          : r
-      )
+      prev.map((r) => {
+        if (r.waliKelasId && validIds.includes(r.waliKelasId)) {
+          const updatedR = { ...r, waliKelasId: undefined, waliKelasNama: undefined };
+          setDoc(doc(db, 'rombels', r.id), cleanForFirestore(updatedR)).catch(() => {});
+          return updatedR;
+        }
+        return r;
+      })
     );
     setKelasMapelPengampuList((prev) =>
-      prev.map((kmp) =>
-        kmp.guruId && validIds.includes(kmp.guruId)
-          ? { ...kmp, guruId: undefined, guruNama: undefined }
-          : kmp
-      )
+      prev.map((kmp) => {
+        if (kmp.guruId && validIds.includes(kmp.guruId)) {
+          const updatedK = { ...kmp, guruId: undefined, guruNama: undefined };
+          setDoc(doc(db, 'kelasMapelPengampu', kmp.id), cleanForFirestore(updatedK)).catch(() => {});
+          return updatedK;
+        }
+        return kmp;
+      })
     );
   };
 
@@ -315,16 +515,19 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const target = users.find((u) => u.id === userId);
     if (!target || target.username === 'darma313adi') return;
     const nextStatus: 'aktif' | 'nonaktif' = target.status === 'aktif' ? 'nonaktif' : 'aktif';
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, status: nextStatus } : u))
-    );
+    const updated = { ...target, status: nextStatus };
+    setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
+    setDoc(doc(db, 'users', userId), cleanForFirestore(updated)).catch(() => {});
   };
 
   const resetUserPassword = (userId: string, newPassword?: string): string => {
     const pass = newPassword || '123456';
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, password: pass } : u))
-    );
+    const target = users.find((u) => u.id === userId);
+    if (target) {
+      const updated = { ...target, password: pass };
+      setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
+      setDoc(doc(db, 'users', userId), cleanForFirestore(updated)).catch(() => {});
+    }
     return pass;
   };
 
@@ -359,6 +562,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (currentUser?.id === userId) {
       setCurrentUser(updatedUser);
     }
+    setDoc(doc(db, 'users', userId), cleanForFirestore(updatedUser)).catch(() => {});
 
     return { success: true, message: 'Kata sandi berhasil diperbarui!' };
   };
@@ -371,36 +575,37 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
     };
     setRombelList((prev) => [...prev, newRombel]);
+    setDoc(doc(db, 'rombels', newRombel.id), cleanForFirestore(newRombel)).catch(() => {});
     return newRombel;
   };
 
   const updateRombel = (updated: RombelKelas) => {
     const oldRombel = rombelList.find((r) => r.id === updated.id);
     setRombelList((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    setDoc(doc(db, 'rombels', updated.id), cleanForFirestore(updated)).catch(() => {});
 
     // Jika nama kelas berubah, sinkronkan nama kelas di tabel plotting kelasMapelPengampu
     if (oldRombel && oldRombel.nama !== updated.nama) {
       setKelasMapelPengampuList((prev) =>
-        prev.map((kmp) => (kmp.kelasNama === oldRombel.nama ? { ...kmp, kelasNama: updated.nama } : kmp))
+        prev.map((kmp) => {
+          if (kmp.kelasNama === oldRombel.nama) {
+            const updatedKmp = { ...kmp, kelasNama: updated.nama };
+            setDoc(doc(db, 'kelasMapelPengampu', kmp.id), cleanForFirestore(updatedKmp)).catch(() => {});
+            return updatedKmp;
+          }
+          return kmp;
+        })
       );
       // Sinkronkan juga pada user siswa
       setUsers((prev) =>
-        prev.map((u) => (u.kelas === oldRombel.nama ? { ...u, kelas: updated.nama } : u))
-      );
-      // Sinkronkan pada target ujian
-      setExams((prev) =>
-        prev.map((e) => ({
-          ...e,
-          kelasTarget: (e.kelasTarget || []).map((k) => (k === oldRombel.nama ? updated.nama : k)),
-        }))
-      );
-      // Sinkronkan pada kelas ajar guru
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.role === 'guru' && u.kelasAjar
-            ? { ...u, kelasAjar: u.kelasAjar.map((k) => (k === oldRombel.nama ? updated.nama : k)) }
-            : u
-        )
+        prev.map((u) => {
+          if (u.kelas === oldRombel.nama) {
+            const updatedU = { ...u, kelas: updated.nama };
+            setDoc(doc(db, 'users', u.id), cleanForFirestore(updatedU)).catch(() => {});
+            return updatedU;
+          }
+          return u;
+        })
       );
     }
   };
@@ -408,27 +613,26 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const deleteRombel = (rombelId: string) => {
     const target = rombelList.find((r) => r.id === rombelId);
     setRombelList((prev) => prev.filter((r) => r.id !== rombelId));
+    deleteDoc(doc(db, 'rombels', rombelId)).catch(() => {});
+
     if (target) {
       // Hapus alokasi mapel kelas ini
-      setKelasMapelPengampuList((prev) => prev.filter((kmp) => kmp.kelasNama !== target.nama));
+      setKelasMapelPengampuList((prev) => {
+        const remaining = prev.filter((kmp) => kmp.kelasNama !== target.nama);
+        const removed = prev.filter((kmp) => kmp.kelasNama === target.nama);
+        removed.forEach((k) => deleteDoc(doc(db, 'kelasMapelPengampu', k.id)).catch(() => {}));
+        return remaining;
+      });
       // Lepas kelas dari siswa agar tidak dangling
       setUsers((prev) =>
-        prev.map((u) => (u.kelas === target.nama ? { ...u, kelas: undefined } : u))
-      );
-      // Hapus kelas dari target ujian
-      setExams((prev) =>
-        prev.map((e) => ({
-          ...e,
-          kelasTarget: (e.kelasTarget || []).filter((k) => k !== target.nama),
-        }))
-      );
-      // Hapus dari kelas ajar guru
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.role === 'guru' && u.kelasAjar
-            ? { ...u, kelasAjar: u.kelasAjar.filter((k) => k !== target.nama) }
-            : u
-        )
+        prev.map((u) => {
+          if (u.kelas === target.nama) {
+            const updatedU = { ...u, kelas: undefined };
+            setDoc(doc(db, 'users', u.id), cleanForFirestore(updatedU)).catch(() => {});
+            return updatedU;
+          }
+          return u;
+        })
       );
     }
   };
@@ -441,41 +645,66 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
     };
     setMataPelajaranList((prev) => [...prev, newMapel]);
+    setDoc(doc(db, 'mataPelajaran', newMapel.id), cleanForFirestore(newMapel)).catch(() => {});
     return newMapel;
   };
 
   const updateMataPelajaran = (updated: MataPelajaran) => {
     const oldMapel = mataPelajaranList.find((m) => m.id === updated.id);
     setMataPelajaranList((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+    setDoc(doc(db, 'mataPelajaran', updated.id), cleanForFirestore(updated)).catch(() => {});
+
     // Sinkronkan nama dan kode di tabel plotting
     setKelasMapelPengampuList((prev) =>
-      prev.map((kmp) =>
-        kmp.mapelId === updated.id
-          ? { ...kmp, mapelNama: updated.nama, mapelKode: updated.kode }
-          : kmp
-      )
+      prev.map((kmp) => {
+        if (kmp.mapelId === updated.id) {
+          const updatedKmp = { ...kmp, mapelNama: updated.nama, mapelKode: updated.kode };
+          setDoc(doc(db, 'kelasMapelPengampu', kmp.id), cleanForFirestore(updatedKmp)).catch(() => {});
+          return updatedKmp;
+        }
+        return kmp;
+      })
     );
+
     // Sinkronkan nama mapel pada ujian jika berubah
     if (oldMapel && oldMapel.nama !== updated.nama) {
       setExams((prev) =>
-        prev.map((e) => (e.mataPelajaran === oldMapel.nama ? { ...e, mataPelajaran: updated.nama } : e))
+        prev.map((e) => {
+          if (e.mataPelajaran === oldMapel.nama) {
+            const updatedE = { ...e, mataPelajaran: updated.nama };
+            setDoc(doc(db, 'exams', e.id), cleanForFirestore(updatedE)).catch(() => {});
+            return updatedE;
+          }
+          return e;
+        })
       );
     }
   };
 
   const deleteMataPelajaran = (mapelId: string) => {
     setMataPelajaranList((prev) => prev.filter((m) => m.id !== mapelId));
-    setKelasMapelPengampuList((prev) => prev.filter((kmp) => kmp.mapelId !== mapelId));
+    deleteDoc(doc(db, 'mataPelajaran', mapelId)).catch(() => {});
+    setKelasMapelPengampuList((prev) => {
+      const remaining = prev.filter((kmp) => kmp.mapelId !== mapelId);
+      const removed = prev.filter((kmp) => kmp.mapelId === mapelId);
+      removed.forEach((k) => deleteDoc(doc(db, 'kelasMapelPengampu', k.id)).catch(() => {}));
+      return remaining;
+    });
   };
 
   // --- Plotting Mapel & Guru Pengampu per Kelas ---
   const setKelasMataPelajaran = (kelasNama: string, mapelIds: string[]) => {
     setKelasMapelPengampuList((prev) => {
-      // Pertahankan alokasi yang sudah ada di kelas ini bila ID mapelnya tetap dipilih
       const existingForClass = prev.filter(
         (kmp) => kmp.kelasNama === kelasNama && mapelIds.includes(kmp.mapelId)
       );
       const otherClasses = prev.filter((kmp) => kmp.kelasNama !== kelasNama);
+
+      // Mapel yang dibuang dari kelas ini: hapus dari Firestore
+      const toDelete = prev.filter(
+        (kmp) => kmp.kelasNama === kelasNama && !mapelIds.includes(kmp.mapelId)
+      );
+      toDelete.forEach((k) => deleteDoc(doc(db, 'kelasMapelPengampu', k.id)).catch(() => {}));
 
       // Tambahkan mapel yang baru dialokasikan ke kelas
       const newlyAdded: KelasMapelPengampu[] = [];
@@ -484,13 +713,15 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (!alreadyAllocated) {
           const mapelObj = mataPelajaranList.find((m) => m.id === mId);
           if (mapelObj) {
-            newlyAdded.push({
+            const newItem: KelasMapelPengampu = {
               id: `kmp_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
               kelasNama,
               mapelId: mapelObj.id,
               mapelNama: mapelObj.nama,
               mapelKode: mapelObj.kode,
-            });
+            };
+            newlyAdded.push(newItem);
+            setDoc(doc(db, 'kelasMapelPengampu', newItem.id), cleanForFirestore(newItem)).catch(() => {});
           }
         }
       });
@@ -508,11 +739,13 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setKelasMapelPengampuList((prev) =>
       prev.map((kmp) => {
         if (kmp.kelasNama === kelasNama && kmp.mapelId === mapelId) {
-          return {
+          const updated = {
             ...kmp,
             guruId: guruId || undefined,
             guruNama: guruNama || undefined,
           };
+          setDoc(doc(db, 'kelasMapelPengampu', kmp.id), cleanForFirestore(updated)).catch(() => {});
+          return updated;
         }
         return kmp;
       })
@@ -535,11 +768,13 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               updatedMapel = currentMapel ? `${currentMapel}, ${mapelObj.nama}` : mapelObj.nama;
             }
 
-            return {
+            const updatedGuru = {
               ...u,
               kelasAjar: updatedKelasAjar,
               mataPelajaran: updatedMapel,
             };
+            setDoc(doc(db, 'users', u.id), cleanForFirestore(updatedGuru)).catch(() => {});
+            return updatedGuru;
           }
           return u;
         })
@@ -548,50 +783,145 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const removeMapelFromKelas = (kelasNama: string, mapelId: string) => {
-    setKelasMapelPengampuList((prev) =>
-      prev.filter((kmp) => !(kmp.kelasNama === kelasNama && kmp.mapelId === mapelId))
-    );
+    setKelasMapelPengampuList((prev) => {
+      const target = prev.find((kmp) => kmp.kelasNama === kelasNama && kmp.mapelId === mapelId);
+      if (target) {
+        deleteDoc(doc(db, 'kelasMapelPengampu', target.id)).catch(() => {});
+      }
+      return prev.filter((kmp) => !(kmp.kelasNama === kelasNama && kmp.mapelId === mapelId));
+    });
   };
 
   const importUsers = (newUsers: Partial<User>[]): number => {
     let count = 0;
     const addedList: User[] = [];
+    const updatedUserMap = new Map<string, User>();
+    const newRombelsToCreate: RombelKelas[] = [];
+    const existingRombelNames = new Set(rombelList.map((r) => r.nama.trim().toLowerCase()));
+
+    // Helper untuk auto-register rombel baru jika belum ada di sistem
+    const ensureRombelExists = (kelasNama?: string) => {
+      if (!kelasNama) return;
+      const cleanNama = kelasNama.trim();
+      if (!cleanNama) return;
+      if (existingRombelNames.has(cleanNama.toLowerCase())) return;
+
+      let tingkat: 'X' | 'XI' | 'XII' | string = 'X';
+      if (/^XII\b|^XII[\s_-]/i.test(cleanNama)) tingkat = 'XII';
+      else if (/^XI\b|^XI[\s_-]/i.test(cleanNama)) tingkat = 'XI';
+      else if (/^X\b|^X[\s_-]/i.test(cleanNama)) tingkat = 'X';
+      else if (cleanNama.includes('12')) tingkat = 'XII';
+      else if (cleanNama.includes('11')) tingkat = 'XI';
+      else if (cleanNama.includes('10')) tingkat = 'X';
+
+      let jurusan: 'MIPA' | 'IPS' | 'Bahasa' | 'Keagamaan' | 'Umum' | string = 'MIPA';
+      if (/IPS/i.test(cleanNama)) jurusan = 'IPS';
+      else if (/Bahasa/i.test(cleanNama)) jurusan = 'Bahasa';
+      else if (/Agama|Keagamaan/i.test(cleanNama)) jurusan = 'Keagamaan';
+      else if (/MIPA|IPA/i.test(cleanNama)) jurusan = 'MIPA';
+      else jurusan = 'Umum';
+
+      const newRombel: RombelKelas = {
+        id: `rombel_${Date.now()}_${Math.floor(Math.random() * 10000)}_${newRombelsToCreate.length}`,
+        nama: cleanNama,
+        tingkat,
+        jurusan,
+        tahunAjaran: '2025/2026',
+        createdAt: new Date().toISOString(),
+      };
+
+      newRombelsToCreate.push(newRombel);
+      existingRombelNames.add(cleanNama.toLowerCase());
+      setDoc(doc(db, 'rombels', newRombel.id), cleanForFirestore(newRombel)).catch(() => {});
+    };
 
     newUsers.forEach((nu) => {
       if (!nu.username || !nu.name) return;
-      // Jangan duplikasi username yang sudah ada
-      const exists = users.some((u) => u.username.toLowerCase() === nu.username?.toLowerCase());
-      if (!exists) {
-        addedList.push({
+      const cleanUsername = nu.username.trim().toLowerCase();
+      const userKelas = nu.kelas ? nu.kelas.trim() : undefined;
+
+      // Pastikan rombel kelas siswa terdaftar di database
+      if (userKelas) {
+        ensureRombelExists(userKelas);
+      }
+      // Jika guru memiliki daftar kelas ajar, pastikan juga terdaftar
+      if (nu.kelasAjar && Array.isArray(nu.kelasAjar)) {
+        nu.kelasAjar.forEach((ka) => ensureRombelExists(ka));
+      }
+
+      const existingUser = users.find(
+        (u) =>
+          u.username.toLowerCase() === cleanUsername ||
+          (nu.role === 'siswa' && nu.nisn && u.nisn && u.nisn.trim() === nu.nisn.trim())
+      );
+
+      if (existingUser) {
+        // PERBARUI akun yang sudah ada dengan data dari template (termasuk kelas baru)
+        const updated: User = {
+          ...existingUser,
+          name: nu.name.trim(),
+          email: nu.email || existingUser.email,
+          role: nu.role || existingUser.role,
+          // Update kelas persis sesuai template (tidak lagi tertahan atau tertimpa default)
+          kelas: userKelas !== undefined ? userKelas : existingUser.kelas,
+          nip: nu.nip !== undefined ? nu.nip : existingUser.nip,
+          nisn: nu.nisn !== undefined ? nu.nisn : existingUser.nisn,
+          mataPelajaran: nu.mataPelajaran !== undefined ? nu.mataPelajaran : existingUser.mataPelajaran,
+          kelasAjar: nu.kelasAjar !== undefined ? nu.kelasAjar : existingUser.kelasAjar,
+        };
+        // Update password hanya jika diberikan password baru yang bukan kosong
+        if (nu.password && nu.password.trim() !== '') {
+          updated.password = nu.password.trim();
+        }
+
+        updatedUserMap.set(existingUser.id, updated);
+        setDoc(doc(db, 'users', existingUser.id), cleanForFirestore(updated)).catch(() => {});
+        count++;
+      } else {
+        // TAMBAH akun baru
+        const newUser: User = {
           id: `usr_${Date.now()}_${count}_${Math.floor(Math.random() * 1000)}`,
-          username: nu.username,
+          username: cleanUsername,
           password: nu.password || '123456',
-          name: nu.name,
-          email: nu.email || `${nu.username}@sekolah.sch.id`,
+          name: nu.name.trim(),
+          email: nu.email || `${cleanUsername}@sekolah.sch.id`,
           role: nu.role || 'siswa',
-          kelas: nu.kelas,
+          kelas: userKelas,
           nip: nu.nip,
           nisn: nu.nisn,
+          mataPelajaran: nu.mataPelajaran,
+          kelasAjar: nu.kelasAjar,
           status: 'aktif',
           createdAt: new Date().toISOString(),
-        });
+        };
+        addedList.push(newUser);
+        setDoc(doc(db, 'users', newUser.id), cleanForFirestore(newUser)).catch(() => {});
         count++;
       }
     });
 
-    if (addedList.length > 0) {
-      setUsers((prev) => [...addedList, ...prev]);
+    if (newRombelsToCreate.length > 0) {
+      setRombelList((prev) => [...prev, ...newRombelsToCreate]);
     }
+
+    if (addedList.length > 0 || updatedUserMap.size > 0) {
+      setUsers((prev) => {
+        const mapped = prev.map((u) => updatedUserMap.get(u.id) || u);
+        return [...addedList, ...mapped];
+      });
+    }
+
     return count;
   };
 
   const createExam = (examData: Omit<Exam, 'id' | 'createdAt'>): Exam => {
     const newExam: Exam = {
       ...examData,
-      id: `exam_${Date.now()}`,
+      id: `exam_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       createdAt: new Date().toISOString(),
     };
     setExams((prev) => [newExam, ...prev]);
+    setDoc(doc(db, 'exams', newExam.id), cleanForFirestore(newExam)).catch(() => {});
     return newExam;
   };
 
@@ -600,10 +930,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (activeExam?.id === updated.id) {
       setActiveExam(updated);
     }
+    setDoc(doc(db, 'exams', updated.id), cleanForFirestore(updated)).catch(() => {});
   };
 
   const deleteExam = (examId: string) => {
     setExams((prev) => prev.filter((e) => e.id !== examId));
+    deleteDoc(doc(db, 'exams', examId)).catch(() => {});
   };
 
   const addQuestionsToExam = (examId: string, questions: QuestionItem[]) => {
@@ -615,10 +947,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             ...q,
             nomor: currentCount + idx + 1,
           }));
-          return {
+          const updatedExam = {
             ...e,
             soalList: [...e.soalList, ...renumbered],
           };
+          setDoc(doc(db, 'exams', examId), cleanForFirestore(updatedExam)).catch(() => {});
+          return updatedExam;
         }
         return e;
       })
@@ -632,15 +966,16 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
     };
     setMaterials((prev) => [newMaterial, ...prev]);
+    setDoc(doc(db, 'materials', newMaterial.id), cleanForFirestore(newMaterial)).catch(() => {});
     return newMaterial;
   };
 
   const deleteMaterial = (materialId: string) => {
     setMaterials((prev) => prev.filter((m) => m.id !== materialId));
+    deleteDoc(doc(db, 'materials', materialId)).catch(() => {});
   };
 
   const startExamSession = (exam: Exam, siswa: User): ExamSubmission => {
-    // Periksa apakah sudah ada pengerjaan sebelumnya yang belum selesai
     const existing = submissions.find(
       (s) => s.examId === exam.id && s.siswaId === siswa.id && s.status === 'sedang_mengerjakan'
     );
@@ -685,6 +1020,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setActiveExam(exam);
     setActiveSubmission(newSub);
     setSubmissions((prev) => [newSub, ...prev.filter((s) => !(s.examId === exam.id && s.siswaId === siswa.id))]);
+    setDoc(doc(db, 'submissions', newSub.id), cleanForFirestore(newSub)).catch(() => {});
     return newSub;
   };
 
@@ -713,9 +1049,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         jawabanMap: updatedMap,
       };
 
-      // update in global submissions array
       setSubmissions((subs) => subs.map((s) => (s.id === updatedSubmission.id ? updatedSubmission : s)));
-
       return updatedSubmission;
     });
   };
@@ -763,6 +1097,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setActiveSubmission(completed);
     setSubmissions((subs) => subs.map((s) => (s.id === completed.id ? completed : s)));
+
+    // Persist final submission to Firestore
+    setDoc(doc(db, 'submissions', completed.id), cleanForFirestore(completed)).catch((err) =>
+      console.error('Failed to save submission to Firestore:', err)
+    );
+
     return completed;
   };
 
@@ -780,19 +1120,21 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSubmissions((prev) =>
       prev.map((s) => {
         if (s.id === submissionId) {
-          return {
+          const updated = {
             ...s,
             totalSkor,
             nilai100,
             catatanGuru: catatanGuru !== undefined ? catatanGuru : s.catatanGuru,
           };
+          setDoc(doc(db, 'submissions', submissionId), cleanForFirestore(updated)).catch(() => {});
+          return updated;
         }
         return s;
       })
     );
   };
 
-  const resetAllDataToDefault = () => {
+  const resetAllDataToDefault = async () => {
     localStorage.removeItem(STORAGE_KEY_USERS);
     localStorage.removeItem(STORAGE_KEY_EXAMS);
     localStorage.removeItem(STORAGE_KEY_SUBMISSIONS);
@@ -801,6 +1143,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.removeItem(STORAGE_KEY_ROMBEL);
     localStorage.removeItem(STORAGE_KEY_MAPEL);
     localStorage.removeItem(STORAGE_KEY_KELAS_MAPEL);
+
     setUsers(INITIAL_USERS);
     setExams(INITIAL_EXAMS);
     setSubmissions(INITIAL_SUBMISSIONS);
@@ -811,6 +1154,21 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCurrentUser(null);
     setActiveExam(null);
     setActiveSubmission(null);
+
+    // Sync reset to Firestore
+    try {
+      const batch = writeBatch(db);
+      INITIAL_USERS.forEach((u) => batch.set(doc(db, 'users', u.id), cleanForFirestore(u)));
+      INITIAL_ROMBEL.forEach((r) => batch.set(doc(db, 'rombels', r.id), cleanForFirestore(r)));
+      INITIAL_MAPEL.forEach((m) => batch.set(doc(db, 'mataPelajaran', m.id), cleanForFirestore(m)));
+      INITIAL_KELAS_MAPEL.forEach((kmp) => batch.set(doc(db, 'kelasMapelPengampu', kmp.id), cleanForFirestore(kmp)));
+      INITIAL_EXAMS.forEach((e) => batch.set(doc(db, 'exams', e.id), cleanForFirestore(e)));
+      INITIAL_MATERIALS.forEach((m) => batch.set(doc(db, 'materials', m.id), cleanForFirestore(m)));
+      INITIAL_SUBMISSIONS.forEach((s) => batch.set(doc(db, 'submissions', s.id), cleanForFirestore(s)));
+      await batch.commit();
+    } catch (err) {
+      console.warn('Reset Firestore error:', err);
+    }
   };
 
   return (
@@ -826,6 +1184,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         kelasMapelPengampuList,
         activeExam,
         activeSubmission,
+        isCloudSynced,
         login,
         logout,
         switchUser,
