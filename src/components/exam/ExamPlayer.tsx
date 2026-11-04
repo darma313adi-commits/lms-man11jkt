@@ -14,6 +14,13 @@ import {
   Bookmark,
   Volume2,
   VolumeX,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Smartphone,
+  MoveHorizontal,
+  X,
+  LogOut,
 } from 'lucide-react';
 import { alarmAudio } from '../../utils/audioAlarm';
 import { APP_LOGO_URL } from '../../constants/assets';
@@ -31,12 +38,24 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
     recordCheatingViolation,
     finishAndSubmitExam,
     exitExamPlayer,
+    logout,
   } = useLMS();
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(() => {
     return submission.sisaWaktuDetik || exam.durasiMenit * 60;
   });
+
+  // Mobile Swipe & Zoom states
+  const [zoomLevel, setZoomLevel] = useState<number>(100); // 80%, 90%, 100%, 115%, 130%, 150%
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewZoom, setPreviewZoom] = useState<number>(1);
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+
+  // Auto-logout state after submission
+  const [isAutoLoggingOut, setIsAutoLoggingOut] = useState(false);
+  const [logoutCountdown, setLogoutCountdown] = useState(3);
 
   // Anti-cheat modal & state
   const [isCheatAlertOpen, setIsCheatAlertOpen] = useState(false);
@@ -167,6 +186,48 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
     }
   };
 
+  // Effect for Auto Logout Countdown after submission
+  useEffect(() => {
+    if (!isAutoLoggingOut) return;
+    if (logoutCountdown <= 0) {
+      exitExamPlayer();
+      logout();
+      return;
+    }
+    const timer = setTimeout(() => {
+      setLogoutCountdown((prev) => prev - 1);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [isAutoLoggingOut, logoutCountdown, exitExamPlayer, logout]);
+
+  // Touch Swipe Handlers for Android & iPhone (Geser Soal)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+
+    const diffX = touchEndX - touchStartX.current;
+    const diffY = touchEndY - touchStartY.current;
+
+    // Minimum swipe threshold 50px horizontal, with minimal vertical deviation
+    if (Math.abs(diffX) > 50 && Math.abs(diffY) < 70) {
+      if (diffX < 0) {
+        // Swipe left -> Soal Selanjutnya
+        setCurrentIndex((prev) => Math.min(exam.soalList.length - 1, prev + 1));
+      } else {
+        // Swipe right -> Soal Sebelumnya
+        setCurrentIndex((prev) => Math.max(0, prev - 1));
+      }
+    }
+    touchStartX.current = null;
+    touchStartY.current = null;
+  };
+
   const handleAutoSubmit = () => {
     const result = finishAndSubmitExam();
     if (result) {
@@ -175,6 +236,8 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
       if (document.fullscreenElement && document.exitFullscreen) {
         document.exitFullscreen().catch(() => {});
       }
+      setIsAutoLoggingOut(true);
+      setLogoutCountdown(3);
     }
   };
 
@@ -196,6 +259,10 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
       if (document.fullscreenElement && document.exitFullscreen) {
         document.exitFullscreen().catch(() => {});
       }
+
+      // Mulai countdown otomatis logout siswa
+      setIsAutoLoggingOut(true);
+      setLogoutCountdown(3);
     }
   };
 
@@ -322,10 +389,31 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
           </div>
         </div>
 
-        {/* Kanan Atas: Timer Countdown */}
-        <div className="flex items-center gap-3">
+        {/* Kanan Atas: Zoom Controls + Timer Countdown + Kirim */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Zoom controls for desktop/tablet */}
+          <div className="hidden sm:flex items-center gap-1 bg-slate-100 rounded-xl p-1 border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setZoomLevel((z) => Math.max(80, z - 15))}
+              className="w-7 h-7 flex items-center justify-center rounded-lg bg-white text-slate-700 hover:bg-slate-200 font-bold text-xs shadow-2xs cursor-pointer"
+              title="Perkecil Teks & Soal (A-)"
+            >
+              A-
+            </button>
+            <span className="text-[11px] font-mono font-bold text-slate-700 px-1.5">{zoomLevel}%</span>
+            <button
+              type="button"
+              onClick={() => setZoomLevel((z) => Math.min(150, z + 15))}
+              className="w-7 h-7 flex items-center justify-center rounded-lg bg-white text-slate-700 hover:bg-slate-200 font-bold text-xs shadow-2xs cursor-pointer"
+              title="Perbesar Teks & Soal (A+)"
+            >
+              A+
+            </button>
+          </div>
+
           <div
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-mono text-sm font-bold border transition ${
+            className={`flex items-center gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl font-mono text-xs sm:text-sm font-bold border transition ${
               secondsRemaining < 300
                 ? 'bg-rose-50 text-rose-700 border-rose-300 animate-pulse'
                 : 'bg-slate-50 text-slate-800 border-slate-300'
@@ -337,7 +425,7 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
 
           <button
             onClick={() => setIsSubmitConfirmOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition cursor-pointer"
           >
             <Send className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Kirim Jawaban</span>
@@ -345,13 +433,77 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
         </div>
       </header>
 
+      {/* Mobile Horizontal Navigation & Zoom Controls (Khusus Android & iPhone) */}
+      <div className="lg:hidden bg-white border-b border-slate-200 px-3 py-2 flex items-center justify-between gap-2 shrink-0 shadow-2xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none flex-1">
+          {exam.soalList.map((q, idx) => {
+            const isCurrent = idx === currentIndex;
+            const isAns = isQuestionAnswered(q.id);
+            const isRagu = !!submission.jawabanMap[q.id]?.raguRagu;
+            return (
+              <button
+                key={q.id}
+                type="button"
+                onClick={() => setCurrentIndex(idx)}
+                className={`w-7 h-7 rounded-lg font-extrabold text-xs shrink-0 transition flex items-center justify-center cursor-pointer ${
+                  isCurrent
+                    ? 'bg-indigo-600 text-white ring-2 ring-indigo-400'
+                    : isRagu
+                    ? 'bg-amber-400 text-slate-900 border border-amber-500'
+                    : isAns
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {idx + 1}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Zoom Controls for Mobile (A- dan A+) */}
+        <div className="flex items-center gap-0.5 bg-slate-100 border border-slate-200 rounded-xl p-0.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setZoomLevel((z) => Math.max(80, z - 15))}
+            className="w-6 h-6 flex items-center justify-center rounded-lg bg-white text-slate-700 font-bold text-[11px] shadow-2xs cursor-pointer"
+            title="Perkecil Teks (A-)"
+          >
+            A-
+          </button>
+          <span className="text-[10px] font-mono font-bold text-slate-600 px-1">{zoomLevel}%</span>
+          <button
+            type="button"
+            onClick={() => setZoomLevel((z) => Math.min(150, z + 15))}
+            className="w-6 h-6 flex items-center justify-center rounded-lg bg-white text-slate-700 font-bold text-[11px] shadow-2xs cursor-pointer"
+            title="Perbesar Teks (A+)"
+          >
+            A+
+          </button>
+        </div>
+      </div>
+
       {/* 2. MAIN EXAM BODY (Question area + Palette Grid) */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Left / Center: Question Renderer */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="max-w-3xl mx-auto space-y-5">
             {currentSoal ? (
-              <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm">
+              <div
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+                style={{ fontSize: `${zoomLevel}%` }}
+                className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-8 shadow-sm transition-all duration-150 touch-pan-y"
+              >
+                {/* Swipe guidance & scale indicator */}
+                <div className="flex items-center justify-between text-[11px] text-slate-400 pb-3 mb-3 border-b border-slate-100">
+                  <span className="flex items-center gap-1.5 text-indigo-600 font-semibold">
+                    <MoveHorizontal className="w-3.5 h-3.5" />
+                    <span>Geser layar (swipe) kiri/kanan untuk ganti soal</span>
+                  </span>
+                  <span className="font-mono text-slate-400 text-[10px]">Ukuran: {zoomLevel}%</span>
+                </div>
+
                 {/* Header Soal */}
                 <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                   <div className="flex items-center gap-2">
@@ -387,14 +539,22 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
 
                 {/* Question Image (Redaksi Soal) if available */}
                 {currentSoal.gambar && (
-                  <div className="my-4 p-2 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center">
+                  <div
+                    onClick={() => {
+                      setPreviewImage(currentSoal.gambar!);
+                      setPreviewZoom(1);
+                    }}
+                    className="my-4 p-2.5 bg-slate-50 border border-slate-200 hover:border-indigo-400 rounded-2xl flex flex-col items-center justify-center cursor-zoom-in transition group shadow-2xs"
+                    title="Ketuk atau klik untuk memperbesar gambar"
+                  >
                     <img
                       src={currentSoal.gambar}
                       alt="Gambar Redaksi Soal"
-                      className="max-h-80 max-w-full rounded-xl object-contain shadow-xs"
+                      className="max-h-80 max-w-full rounded-xl object-contain shadow-xs group-hover:scale-[1.02] transition"
                     />
-                    <span className="text-[10px] text-slate-500 font-semibold mt-1">
-                      🔍 Lampiran Gambar / Stimulus Soal
+                    <span className="text-[10px] text-indigo-600 font-bold mt-1.5 flex items-center gap-1">
+                      <ZoomIn className="w-3.5 h-3.5" />
+                      <span>🔍 Ketuk gambar untuk memperbesar / zoom detail</span>
                     </span>
                   </div>
                 )}
@@ -848,6 +1008,102 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
                 Ya, Kirim Sekarang
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. MODAL PERBESAR GAMBAR (IMAGE LIGHTBOX FOR MOBILE & DESKTOP) */}
+      {previewImage && (
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-3 animate-in fade-in">
+          {/* Top Bar Lightbox */}
+          <div className="w-full max-w-3xl flex items-center justify-between text-white pb-3 mb-2 border-b border-white/20">
+            <span className="text-xs font-bold flex items-center gap-1.5">
+              <ZoomIn className="w-4 h-4 text-indigo-400" />
+              <span>Pratinjau Gambar Soal ({Math.round(previewZoom * 100)}%)</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPreviewZoom((z) => Math.max(0.75, z - 0.25))}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-xs cursor-pointer"
+                title="Perkecil (-)"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewZoom(1)}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-xs cursor-pointer"
+                title="Reset Ukuran (100%)"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewZoom((z) => Math.min(3, z + 0.25))}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-xs cursor-pointer"
+                title="Perbesar (+)"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="p-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs ml-2 cursor-pointer"
+                title="Tutup (Esc)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Image Container with Scroll & Zoom */}
+          <div className="flex-1 w-full max-w-3xl overflow-auto flex items-center justify-center p-2">
+            <img
+              src={previewImage}
+              alt="Detail Gambar Soal"
+              style={{ transform: `scale(${previewZoom})`, transition: 'transform 0.2s ease-out' }}
+              className="max-h-[80vh] max-w-full object-contain rounded-xl shadow-2xl origin-center"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 7. MODAL AUTO LOGOUT SETELAH KIRIM JAWABAN */}
+      {isAutoLoggingOut && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-7 sm:p-8 text-center shadow-2xl border border-slate-200 animate-in zoom-in-95">
+            <div className="w-20 h-20 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4 border-4 border-emerald-50">
+              <CheckCircle2 className="w-10 h-10" />
+            </div>
+
+            <h3 className="text-xl font-black text-slate-900">
+              Jawaban Berhasil Terkirim!
+            </h3>
+            <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+              Terima kasih, lembar jawaban dan skor Anda untuk <strong>{exam.judul}</strong> telah tersimpan di server.
+            </p>
+
+            <div className="my-5 p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-950">
+              <p className="text-xs font-semibold">
+                Sesi ujian telah selesai. Untuk menjaga keamanan akun siswa, Anda akan otomatis logout dalam:
+              </p>
+              <div className="text-3xl font-black font-mono text-indigo-700 mt-2">
+                {logoutCountdown} <span className="text-sm font-normal text-indigo-500">detik</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                exitExamPlayer();
+                logout();
+              }}
+              className="w-full py-3.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+            >
+              <LogOut className="w-4 h-4 text-rose-400" />
+              <span>Logout Sekarang</span>
+            </button>
           </div>
         </div>
       )}

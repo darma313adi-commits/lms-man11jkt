@@ -85,6 +85,9 @@ interface LMSContextType {
   finishAndSubmitExam: () => ExamSubmission | null;
   exitExamPlayer: () => void;
   updateSubmissionReview: (submissionId: string, totalSkor: number, nilai100: number, catatanGuru?: string) => void;
+  resetExamSubmission: (submissionId: string) => void;
+  resetExamParticipant: (examId: string, studentId: string) => void;
+  resetExamParticipantsByClass: (examId: string, className: string) => void;
   resetAllDataToDefault: () => void;
 }
 
@@ -1134,6 +1137,59 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   };
 
+  const resetExamSubmission = (submissionId: string) => {
+    setSubmissions((prev) => prev.filter((s) => s.id !== submissionId));
+    if (activeSubmission?.id === submissionId) {
+      setActiveSubmission(null);
+    }
+    deleteDoc(doc(db, 'submissions', submissionId)).catch((err) =>
+      console.error('Failed to reset submission in Firestore:', err)
+    );
+  };
+
+  const resetExamParticipant = (examId: string, studentId: string) => {
+    const toRemove = submissions.filter(
+      (s) => s.examId === examId && s.siswaId === studentId
+    );
+    if (toRemove.length === 0) return;
+
+    setSubmissions((prev) =>
+      prev.filter((s) => !(s.examId === examId && s.siswaId === studentId))
+    );
+    if (activeSubmission?.examId === examId && activeSubmission?.siswaId === studentId) {
+      setActiveSubmission(null);
+    }
+    toRemove.forEach((sub) => {
+      deleteDoc(doc(db, 'submissions', sub.id)).catch((err) =>
+        console.error('Failed to reset participant in Firestore:', err)
+      );
+    });
+  };
+
+  const resetExamParticipantsByClass = (examId: string, className: string) => {
+    const cleanClass = className.trim().toLowerCase();
+    const toRemove = submissions.filter((s) => {
+      if (s.examId !== examId) return false;
+      const subClass = (s.siswaKelas || '').trim().toLowerCase();
+      if (subClass === cleanClass) return true;
+      const user = users.find((u) => u.id === s.siswaId);
+      return (user?.kelas || '').trim().toLowerCase() === cleanClass;
+    });
+
+    if (toRemove.length === 0) return;
+
+    const removeIds = new Set(toRemove.map((s) => s.id));
+    setSubmissions((prev) => prev.filter((s) => !removeIds.has(s.id)));
+    if (activeSubmission && removeIds.has(activeSubmission.id)) {
+      setActiveSubmission(null);
+    }
+    toRemove.forEach((sub) => {
+      deleteDoc(doc(db, 'submissions', sub.id)).catch((err) =>
+        console.error('Failed to delete class submission from Firestore:', err)
+      );
+    });
+  };
+
   const resetAllDataToDefault = async () => {
     localStorage.removeItem(STORAGE_KEY_USERS);
     localStorage.removeItem(STORAGE_KEY_EXAMS);
@@ -1217,6 +1273,9 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         finishAndSubmitExam,
         exitExamPlayer,
         updateSubmissionReview,
+        resetExamSubmission,
+        resetExamParticipant,
+        resetExamParticipantsByClass,
         resetAllDataToDefault,
       }}
     >

@@ -119,7 +119,11 @@ export const RombelManager: React.FC<RombelManagerProps> = ({ onSelectPlotting }
   };
 
   const handleDelete = (r: RombelKelas) => {
-    if (confirm(`Yakin ingin menghapus rombongan kelas "${r.nama}"? Seluruh alokasi mapel kelas ini juga akan dihapus.`)) {
+    if (
+      confirm(
+        `Yakin ingin menghapus rombongan kelas "${r.nama}"? Seluruh alokasi guru pengampu dan penempatan siswa pada rombel kelas ini akan dilepas.`
+      )
+    ) {
       deleteRombel(r.id);
     }
   };
@@ -434,20 +438,37 @@ export const RombelManager: React.FC<RombelManagerProps> = ({ onSelectPlotting }
                 />
               </div>
 
-              <div className="pt-4 flex justify-end gap-2.5 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md transition"
-                >
-                  {editingRombel ? 'Simpan Perubahan' : 'Buat Rombel'}
-                </button>
+              <div className="pt-4 flex items-center justify-between border-t border-slate-100">
+                {editingRombel ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleDelete(editingRombel);
+                      setShowModal(false);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus Kelas</span>
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md transition cursor-pointer"
+                  >
+                    {editingRombel ? 'Simpan Perubahan' : 'Buat Rombel'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

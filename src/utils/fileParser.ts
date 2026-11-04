@@ -501,10 +501,17 @@ export async function parseExcelQuestions(file: File): Promise<QuestionItem[]> {
 }
 
 /**
- * Unduh Rekap Nilai ke Excel
+ * Unduh Rekap Nilai ke Excel (Dapat difilter per kelas)
  */
-export function exportGradesExcel(submissions: ExamSubmission[], exam: Exam) {
-  const rows = submissions.map((sub, i) => {
+export function exportGradesExcel(submissions: ExamSubmission[], exam: Exam, className?: string) {
+  const filteredSubs =
+    className && className !== 'all'
+      ? submissions.filter(
+          (s) => (s.siswaKelas || '').trim().toLowerCase() === className.trim().toLowerCase()
+        )
+      : submissions;
+
+  const rows = filteredSubs.map((sub, i) => {
     const isLulus = sub.nilai100 >= exam.kkm;
     return {
       'No': i + 1,
@@ -527,9 +534,17 @@ export function exportGradesExcel(submissions: ExamSubmission[], exam: Exam) {
 
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Rekap Nilai Siswa');
+  const sheetTitle =
+    className && className !== 'all'
+      ? `Nilai ${className}`.slice(0, 31)
+      : 'Rekap Nilai Siswa';
+  XLSX.utils.book_append_sheet(wb, ws, sheetTitle);
   const sanitizedTitle = exam.judul.replace(/[/\\?%*:|"<>]/g, '_');
-  XLSX.writeFile(wb, `Rekap_Nilai_${sanitizedTitle}.xlsx`);
+  const classSuffix =
+    className && className !== 'all'
+      ? `_Kelas_${className.replace(/[/\\?%*:|"<> ]/g, '_')}`
+      : '';
+  XLSX.writeFile(wb, `Rekap_Nilai_${sanitizedTitle}${classSuffix}.xlsx`);
 }
 
 /**

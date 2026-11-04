@@ -35,6 +35,10 @@ import {
   Calendar,
   Settings,
   Check,
+  Printer,
+  List,
+  LayoutGrid,
+  RotateCcw,
 } from 'lucide-react';
 import {
   downloadQuestionTemplateExcel,
@@ -43,12 +47,21 @@ import {
   exportItemAnalysisExcel,
 } from '../../utils/fileParser';
 import { exportGradesPdf } from '../../utils/pdfExport';
+import {
+  printExamDirectly,
+  exportExamPdf,
+  exportExamWordDoc,
+  printMaterialDirectly,
+  exportMaterialPdf,
+} from '../../utils/examPrintExport';
 import { generateQuestionsWithAI, parseRawTextToQuestions } from '../../utils/aiGenerator';
 import { analyzeExamQuestions } from '../../utils/examScoring';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { ExamSettingsModal, ALL_CLASSES_LIST } from './ExamSettingsModal';
 import { DaftarSiswaPerKelas } from './DaftarSiswaPerKelas';
 import { QuestionImageEditorModal } from './QuestionImageEditorModal';
+import { ExamViewModal } from '../common/ExamViewModal';
+import { MaterialViewModal } from '../common/MaterialViewModal';
 
 export const GuruDashboard: React.FC = () => {
   const {
@@ -61,6 +74,9 @@ export const GuruDashboard: React.FC = () => {
     addQuestionsToExam,
     submissions,
     updateSubmissionReview,
+    resetExamSubmission,
+    resetExamParticipant,
+    resetExamParticipantsByClass,
     materials,
     addMaterial,
     deleteMaterial,
@@ -73,8 +89,12 @@ export const GuruDashboard: React.FC = () => {
       ? [...rombelList.map((r) => r.nama), 'Semua Kelas']
       : ALL_CLASSES_LIST;
 
-  const [activeTab, setActiveTab] = useState<'beranda' | 'siswa_kelas' | 'ujian' | 'buat_ai' | 'upload_file' | 'materi' | 'koreksi' | 'analisis' | 'curang'>('beranda');
+  const [activeTab, setActiveTab] = useState<
+    'beranda' | 'siswa_kelas' | 'daftar_asesmen' | 'ujian' | 'buat_ai' | 'upload_file' | 'materi' | 'koreksi' | 'analisis' | 'curang'
+  >('beranda');
+  const [navOrientation, setNavOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
   const [selectedExamId, setSelectedExamId] = useState<string>(exams[0]?.id || '');
+  const [koreksiKelasFilter, setKoreksiKelasFilter] = useState<string>('all');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [selectedClassForRoster, setSelectedClassForRoster] = useState<string | null>(null);
   const [rosterSearch, setRosterSearch] = useState('');
@@ -83,6 +103,15 @@ export const GuruDashboard: React.FC = () => {
   const [showQuestionEditorModal, setShowQuestionEditorModal] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<QuestionItem | null>(null);
   const [newExamClasses, setNewExamClasses] = useState<string[]>(['X MIPA 1', 'X MIPA 2']);
+
+  // Modals for Viewing Exam and Material
+  const [selectedExamForView, setSelectedExamForView] = useState<Exam | null>(null);
+  const [selectedMaterialForView, setSelectedMaterialForView] = useState<LessonMaterial | null>(null);
+
+  // Filters for Daftar Asesmen Saya
+  const [myExamSearch, setMyExamSearch] = useState('');
+  const [myExamStatusFilter, setMyExamStatusFilter] = useState<'all' | 'aktif' | 'draft'>('all');
+  const [myExamClassFilter, setMyExamClassFilter] = useState('all');
 
   // AI Generator Form State
   const [aiTopic, setAiTopic] = useState('Sistem Ekskresi & Metabolisme Sel');
@@ -129,6 +158,7 @@ export const GuruDashboard: React.FC = () => {
   });
   const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
   const [previewMaterial, setPreviewMaterial] = useState<LessonMaterial | null>(null);
+  const [materialOwnerFilter, setMaterialOwnerFilter] = useState<'all' | 'mine'>('all');
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
   // Submission correction modal
@@ -534,17 +564,50 @@ export const GuruDashboard: React.FC = () => {
                 <span>KKM: <strong>{activeExam.kkm}</strong></span>
                 <span>Target: <strong>{activeExam.kelasTarget.join(', ')}</strong></span>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedExamForSettings(activeExam);
-                    setShowExamSettingsModal(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs shadow-xs transition cursor-pointer"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  <span>Setting Soal & Token</span>
-                </button>
+                {/* Tombol Akses Cepat: Lihat, Cetak, Unduh */}
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedExamForView(activeExam)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition cursor-pointer"
+                    title="Lihat Pratinjau Naskah Soal"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-indigo-300" />
+                    <span>Lihat</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => printExamDirectly(activeExam, { includeAnswerKey: false })}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs transition cursor-pointer shadow-xs"
+                    title="Cetak Naskah Soal Siswa"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Cetak</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => exportExamPdf(activeExam, { includeAnswerKey: false })}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer shadow-xs"
+                    title="Unduh Naskah Soal PDF"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Unduh PDF</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedExamForSettings(activeExam);
+                      setShowExamSettingsModal(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>Setting Soal & Token</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -564,115 +627,165 @@ export const GuruDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Tabs Menu */}
-      <div className="flex items-center gap-2 overflow-x-auto border-b border-slate-200 mb-6">
-        <button
-          onClick={() => setActiveTab('beranda')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition cursor-pointer ${
-            activeTab === 'beranda'
-              ? 'border-indigo-600 text-indigo-700'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Home className="w-4 h-4" />
-          <span>Beranda ({kelasDiajarList.length} Kelas)</span>
-        </button>
+      {/* Navigation Controls: Scrollable Vertically & Horizontally */}
+      <div className="mb-6 bg-white rounded-2xl border border-slate-200 p-3 shadow-xs">
+        <div className="flex items-center justify-between mb-2 px-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-700">Menu Navigasi Guru & Asesmen</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">
+              Bisa ditarik ke atas / ke bawah
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setNavOrientation(navOrientation === 'horizontal' ? 'vertical' : 'horizontal')}
+              className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 flex items-center gap-1 transition cursor-pointer"
+              title="Ganti mode scroll menu vertikal / horizontal"
+            >
+              {navOrientation === 'horizontal' ? (
+                <>
+                  <List className="w-3.5 h-3.5" />
+                  <span>Mode Daftar Vertikal</span>
+                </>
+              ) : (
+                <>
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Mode Tab Geser</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
 
-        <button
-          onClick={() => setActiveTab('siswa_kelas')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition cursor-pointer ${
-            activeTab === 'siswa_kelas'
-              ? 'border-indigo-600 text-indigo-700'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+        {/* Menu Container dengan dukungan scroll ke atas / ke bawah */}
+        <div
+          className={`${
+            navOrientation === 'vertical'
+              ? 'max-h-56 overflow-y-auto space-y-1.5 pr-1 p-1 scroll-smooth'
+              : 'overflow-x-auto overflow-y-auto max-h-36 sm:max-h-none flex items-center gap-1.5 pb-1 p-1 scroll-smooth'
           }`}
         >
-          <School className="w-4 h-4 text-indigo-600" />
-          <span>Siswa per Kelas ({users.filter((u) => u.role === 'siswa').length})</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('beranda')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+              activeTab === 'beranda'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80'
+            }`}
+          >
+            <Home className="w-4 h-4" />
+            <span>Beranda ({kelasDiajarList.length} Kelas)</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('ujian')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition cursor-pointer ${
-            activeTab === 'ujian'
-              ? 'border-indigo-600 text-indigo-700'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <BookOpen className="w-4 h-4" />
-          <span>Daftar Soal ({activeExam?.soalList.length || 0})</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('daftar_asesmen')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+              activeTab === 'daftar_asesmen'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200/80'
+            }`}
+          >
+            <Layers className="w-4 h-4 text-indigo-600" />
+            <span>Semua Asesmen Saya ({exams.length})</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('materi')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition ${
-            activeTab === 'materi'
-              ? 'border-emerald-600 text-emerald-700'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <FileText className="w-4 h-4 text-emerald-600" />
-          <span>Materi Pelajaran PDF ({materials.length})</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('ujian')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+              activeTab === 'ujian'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80'
+            }`}
+          >
+            <BookOpen className="w-4 h-4 text-violet-600" />
+            <span>Edit Soal Ujian ({activeExam?.soalList.length || 0})</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('buat_ai')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition ${
-            activeTab === 'buat_ai'
-              ? 'border-indigo-600 text-indigo-700'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Sparkles className="w-4 h-4 text-violet-600" />
-          <span>AI Question Generator</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('materi')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+              activeTab === 'materi'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80'
+            }`}
+          >
+            <FileText className="w-4 h-4 text-emerald-600" />
+            <span>Materi Pelajaran PDF ({materials.length})</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('upload_file')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition ${
-            activeTab === 'upload_file'
-              ? 'border-indigo-600 text-indigo-700'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Upload className="w-4 h-4" />
-          <span>Import Soal (Excel/Word/PDF)</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('siswa_kelas')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+              activeTab === 'siswa_kelas'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80'
+            }`}
+          >
+            <School className="w-4 h-4 text-indigo-600" />
+            <span>Siswa per Kelas ({users.filter((u) => u.role === 'siswa').length})</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('koreksi')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition ${
-            activeTab === 'koreksi'
-              ? 'border-indigo-600 text-indigo-700'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Award className="w-4 h-4" />
-          <span>Koreksi & Rekap Nilai ({examSubmissions.length})</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('buat_ai')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+              activeTab === 'buat_ai'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-violet-600" />
+            <span>AI Question Generator</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('analisis')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition ${
-            activeTab === 'analisis'
-              ? 'border-indigo-600 text-indigo-700'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <BarChart3 className="w-4 h-4" />
-          <span>Analisis Butir Soal</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('upload_file')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+              activeTab === 'upload_file'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80'
+            }`}
+          >
+            <Upload className="w-4 h-4" />
+            <span>Import Soal (Excel/Word/PDF)</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('curang')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition ${
-            activeTab === 'curang'
-              ? 'border-rose-600 text-rose-700'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <ShieldAlert className="w-4 h-4 text-rose-500" />
-          <span>Laporan Curang ({allViolations.length})</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('koreksi')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+              activeTab === 'koreksi'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80'
+            }`}
+          >
+            <Award className="w-4 h-4 text-amber-500" />
+            <span>Koreksi & Rekap Nilai ({examSubmissions.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('analisis')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+              activeTab === 'analisis'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4 text-cyan-600" />
+            <span>Analisis Butir Soal</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('curang')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+              activeTab === 'curang'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4 text-rose-500" />
+            <span>Laporan Curang ({allViolations.length})</span>
+          </button>
+        </div>
       </div>
 
       {/* TAB BERANDA: Kelas-Kelas yang Diajar & Ringkasan Guru */}
@@ -1102,7 +1215,318 @@ export const GuruDashboard: React.FC = () => {
         <DaftarSiswaPerKelas />
       )}
 
-      {/* TAB 1: Daftar Soal Ujian Aktif */}
+      {/* TAB: Semua Asesmen Saya (Lihat, Cetak, Unduh, dan Edit Soal) */}
+      {activeTab === 'daftar_asesmen' && (
+        <div className="space-y-6">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 text-white shadow-md relative overflow-hidden">
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="max-w-2xl">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 mb-2">
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Katalog Asesmen Guru</span>
+                </span>
+                <h2 className="text-xl font-bold">Koleksi Asesmen & Ujian CBT Anda</h2>
+                <p className="text-slate-300 text-xs mt-1 leading-relaxed">
+                  Kelola seluruh naskah ujian yang telah Anda susun. Anda dapat <strong>Melihat</strong> butir soal,{' '}
+                  <strong>Mencetak Naskah Ujian Resmi</strong>, <strong>Mengunduh PDF/Word</strong>, dan{' '}
+                  <strong>Mengedit Butir Soal & Gambar</strong> kapan saja.
+                </p>
+              </div>
+
+              <div className="shrink-0 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewExamData((prev) => ({
+                      ...prev,
+                      judul: 'Asesmen Sumatif Lingkup Materi',
+                      jenisAsesmen: 'sumatif_lingkup_materi',
+                    }));
+                    setShowCreateExamModal(true);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ Buat Asesmen Baru</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Filters Bar */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs">
+            <div className="flex flex-col md:flex-row gap-3 justify-between items-stretch md:items-center">
+              <div className="relative flex-1 min-w-[240px]">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari judul asesmen, kode ujian, atau deskripsi..."
+                  value={myExamSearch}
+                  onChange={(e) => setMyExamSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Status Filter */}
+                <select
+                  value={myExamStatusFilter}
+                  onChange={(e) => setMyExamStatusFilter(e.target.value as any)}
+                  className="text-xs bg-white border border-slate-300 rounded-xl px-3 py-2 font-medium"
+                >
+                  <option value="all">Semua Status</option>
+                  <option value="aktif">Status: Aktif Saja</option>
+                  <option value="draft">Status: Draft Saja</option>
+                </select>
+
+                {/* Class Target Filter */}
+                <select
+                  value={myExamClassFilter}
+                  onChange={(e) => setMyExamClassFilter(e.target.value)}
+                  className="text-xs bg-white border border-slate-300 rounded-xl px-3 py-2 font-medium"
+                >
+                  <option value="all">Semua Kelas Sasaran</option>
+                  {examClassChoices.map((cls) => (
+                    <option key={cls} value={cls}>
+                      {cls}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-3 text-xs text-slate-500 font-medium">
+              Menampilkan{' '}
+              <strong className="text-slate-900">
+                {exams.filter((ex) => {
+                  if (myExamStatusFilter !== 'all' && ex.status !== myExamStatusFilter) return false;
+                  if (
+                    myExamClassFilter !== 'all' &&
+                    !ex.kelasTarget.some((k) => k.toLowerCase() === myExamClassFilter.toLowerCase())
+                  )
+                    return false;
+                  if (myExamSearch.trim()) {
+                    const q = myExamSearch.toLowerCase();
+                    return (
+                      ex.judul.toLowerCase().includes(q) ||
+                      ex.kodeUjian.toLowerCase().includes(q) ||
+                      ex.mataPelajaran.toLowerCase().includes(q)
+                    );
+                  }
+                  return true;
+                }).length}
+              </strong>{' '}
+              dari {exams.length} asesmen terdaftar
+            </div>
+          </div>
+
+          {/* Cards Asesmen Guru */}
+          <div className="space-y-3">
+            {exams
+              .filter((ex) => {
+                if (myExamStatusFilter !== 'all' && ex.status !== myExamStatusFilter) return false;
+                if (
+                  myExamClassFilter !== 'all' &&
+                  !ex.kelasTarget.some((k) => k.toLowerCase() === myExamClassFilter.toLowerCase())
+                )
+                  return false;
+                if (myExamSearch.trim()) {
+                  const q = myExamSearch.toLowerCase();
+                  return (
+                    ex.judul.toLowerCase().includes(q) ||
+                    ex.kodeUjian.toLowerCase().includes(q) ||
+                    ex.mataPelajaran.toLowerCase().includes(q)
+                  );
+                }
+                return true;
+              })
+              .map((ex) => {
+                const subCount = submissions.filter((s) => s.examId === ex.id).length;
+                const isExamOwner =
+                  ex.guruId === currentUser?.id ||
+                  (ex.guruNama &&
+                    currentUser?.name &&
+                    ex.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+                  (!ex.guruId && !ex.guruNama) ||
+                  currentUser?.role === 'admin';
+
+                return (
+                  <div
+                    key={ex.id}
+                    className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:border-indigo-300 transition"
+                  >
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                      {/* Left: Info Asesmen */}
+                      <div className="space-y-1.5 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {ex.mataPelajaran}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              ex.status === 'aktif'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {ex.status === 'aktif' ? '● Aktif' : '○ Draft'}
+                          </span>
+                          <span className="text-[11px] font-mono font-bold text-slate-500">
+                            Kode: {ex.kodeUjian}
+                          </span>
+                          {ex.tokenUjian && (
+                            <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-mono text-[10px] font-bold">
+                              Token: {ex.tokenUjian}
+                            </span>
+                          )}
+                        </div>
+
+                        <h3 className="text-base font-bold text-slate-900">{ex.judul}</h3>
+                        <p className="text-xs text-slate-500 line-clamp-1">{ex.deskripsi}</p>
+
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 pt-1">
+                          <span>
+                            Kelas Sasaran: <strong>{ex.kelasTarget.join(', ')}</strong>
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Durasi: <strong>{ex.durasiMenit} Menit</strong>
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Total: <strong>{ex.soalList.length} Butir Soal</strong>
+                          </span>
+                          <span>•</span>
+                          <span>
+                            KKM: <strong>{ex.kkm}</strong>
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Jawaban Masuk: <strong className="text-emerald-700">{subCount} Siswa</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Right: Actions (Lihat, Cetak, Unduh, Edit Soal) */}
+                      <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+                        {/* 1. LIHAT */}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedExamForView(ex)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition cursor-pointer"
+                          title="Lihat Pratinjau Lengkap Butir Soal"
+                        >
+                          <Eye className="w-4 h-4 text-indigo-600" />
+                          <span>Lihat</span>
+                        </button>
+
+                        {/* 2. CETAK */}
+                        <div className="inline-flex rounded-xl shadow-xs border border-slate-200 overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => printExamDirectly(ex, { includeAnswerKey: false })}
+                            className="inline-flex items-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition cursor-pointer"
+                            title="Cetak Naskah Ujian Siswa"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Cetak</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => printExamDirectly(ex, { includeAnswerKey: true })}
+                            className="inline-flex items-center px-2 py-2 bg-indigo-700 hover:bg-indigo-800 text-indigo-200 text-[10px] font-bold border-l border-indigo-500 transition cursor-pointer"
+                            title="Cetak Naskah + Kunci Jawaban"
+                          >
+                            + Kunci
+                          </button>
+                        </div>
+
+                        {/* 3. UNDUH */}
+                        <div className="inline-flex rounded-xl shadow-xs border border-slate-200 overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => exportExamPdf(ex, { includeAnswerKey: false })}
+                            className="inline-flex items-center gap-1 px-2.5 py-2 bg-white hover:bg-slate-50 text-slate-800 font-bold text-xs transition cursor-pointer"
+                            title="Unduh Naskah Soal PDF"
+                          >
+                            <Download className="w-3.5 h-3.5 text-rose-600" />
+                            <span>PDF</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => exportExamWordDoc(ex, { includeAnswerKey: false })}
+                            className="inline-flex items-center gap-1 px-2.5 py-2 bg-white hover:bg-slate-50 text-slate-800 font-bold text-xs border-l border-slate-200 transition cursor-pointer"
+                            title="Unduh Naskah Soal Microsoft Word (.doc)"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-blue-600" />
+                            <span>Word</span>
+                          </button>
+                        </div>
+
+                        {/* 4. EDIT SOAL (Akun Guru bisa melihat asesmen yang dia buat beserta edit soal) */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedExamId(ex.id);
+                            setActiveTab('ujian');
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+                          title="Buka Lembar Edit Soal & Gambar Ujian Ini"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit Soal ({ex.soalList.length})</span>
+                        </button>
+
+                        {/* Settings Token */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedExamForSettings(ex);
+                            setShowExamSettingsModal(true);
+                          }}
+                          className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
+                          title="Setting Soal, Jadwal & Token"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </button>
+
+                        {/* Hapus Asesmen (Hanya milik guru sendiri atau admin) */}
+                        {isExamOwner ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (
+                                confirm(
+                                  `Yakin ingin menghapus asesmen "${ex.judul}"? Semua butir soal (${ex.soalList.length} soal) dan riwayat pengerjaan siswa akan dihapus permanen.`
+                                )
+                              ) {
+                                deleteExam(ex.id);
+                              }
+                            }}
+                            className="p-2 rounded-xl text-rose-500 hover:text-white hover:bg-rose-600 border border-rose-200 transition cursor-pointer"
+                            title="Hapus Asesmen Saya"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <span
+                            className="p-2 text-slate-300 cursor-not-allowed"
+                            title={`Dibuat oleh ${ex.guruNama || 'guru lain'}. Anda hanya dapat menghapus asesmen milik Anda sendiri.`}
+                          >
+                            <Lock className="w-4 h-4" />
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 1: Daftar & Edit Soal Ujian Aktif */}
       {activeTab === 'ujian' && activeExam && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200">
@@ -1137,16 +1561,57 @@ export const GuruDashboard: React.FC = () => {
               <p className="text-xs text-slate-500 mt-0.5">{activeExam.deskripsi}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {/* Tombol Lihat, Cetak, Unduh langsung di editor soal */}
+              <button
+                type="button"
+                onClick={() => setSelectedExamForView(activeExam)}
+                className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer border border-indigo-200"
+                title="Lihat Pratinjau Naskah Soal Lengkap"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Lihat Naskah</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => printExamDirectly(activeExam, { includeAnswerKey: false })}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                title="Cetak Naskah Ujian"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Cetak Soal</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => exportExamPdf(activeExam, { includeAnswerKey: false })}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                title="Unduh Naskah Soal PDF"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Unduh PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => exportExamWordDoc(activeExam, { includeAnswerKey: false })}
+                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                title="Unduh Naskah Soal Word (.doc)"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Word</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
                   setSelectedExamForSettings(activeExam);
                   setShowExamSettingsModal(true);
                 }}
-                className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer border border-indigo-200"
+                className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer border border-slate-200"
               >
                 <Settings className="w-3.5 h-3.5" />
-                <span>Setting Soal & Token</span>
+                <span>Setting Token</span>
               </button>
               <button
                 type="button"
@@ -1187,6 +1652,37 @@ export const GuruDashboard: React.FC = () => {
                 <Upload className="w-3.5 h-3.5" />
                 <span>Unggah Excel/Word</span>
               </button>
+
+              {Boolean(
+                activeExam.guruId === currentUser?.id ||
+                  (activeExam.guruNama &&
+                    currentUser?.name &&
+                    activeExam.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+                  (!activeExam.guruId && !activeExam.guruNama) ||
+                  currentUser?.role === 'admin'
+              ) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `Yakin ingin menghapus ujian "${activeExam.judul}"? Semua butir soal (${activeExam.soalList.length} butir) dan riwayat nilai terkait akan dihapus secara permanen.`
+                      )
+                    ) {
+                      deleteExam(activeExam.id);
+                      const remaining = exams.filter((e) => e.id !== activeExam.id);
+                      if (remaining.length > 0) {
+                        setSelectedExamId(remaining[0].id);
+                      }
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white border border-rose-200 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                  title="Hapus Ujian Ini"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus Ujian</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1800,87 +2296,206 @@ export const GuruDashboard: React.FC = () => {
 
             {/* Daftar Materi PDF Terunggah */}
             <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">Koleksi Materi PDF Aktif</h3>
                   <p className="text-xs text-slate-500">
                     Total {materials.length} materi telah dipublikasikan untuk siswa MAN 11 Jakarta.
                   </p>
                 </div>
+
+                {/* Filter Tab: Semua vs Milik Saya */}
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setMaterialOwnerFilter('all')}
+                    className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
+                      materialOwnerFilter === 'all'
+                        ? 'bg-white text-slate-800 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Semua ({materials.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMaterialOwnerFilter('mine')}
+                    className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
+                      materialOwnerFilter === 'mine'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Materi Saya (
+                    {
+                      materials.filter(
+                        (m) =>
+                          m.guruId === currentUser?.id ||
+                          (m.guruNama &&
+                            currentUser?.name &&
+                            m.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+                      ).length
+                    }
+                    )
+                  </button>
+                </div>
               </div>
 
-              {materials.length === 0 ? (
+              {materials.filter((m) => {
+                if (materialOwnerFilter === 'mine') {
+                  return (
+                    m.guruId === currentUser?.id ||
+                    (m.guruNama &&
+                      currentUser?.name &&
+                      m.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+                  );
+                }
+                return true;
+              }).length === 0 ? (
                 <div className="text-center py-12 px-4 border border-dashed border-slate-200 rounded-xl">
                   <FolderOpen className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-                  <p className="text-xs font-bold text-slate-600">Belum ada materi pelajaran PDF</p>
+                  <p className="text-xs font-bold text-slate-600">
+                    {materialOwnerFilter === 'mine'
+                      ? 'Anda belum mengunggah materi pelajaran apapun'
+                      : 'Belum ada materi pelajaran PDF'}
+                  </p>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Gunakan formulir di sebelah kiri untuk mengunggah materi pelajaran pertama Anda.
+                    Gunakan formulir di sebelah kiri untuk mengunggah materi pelajaran Anda.
                   </p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {materials.map((m) => (
-                    <div
-                      key={m.id}
-                      className="border border-slate-200 hover:border-emerald-300 rounded-xl p-4 transition bg-white hover:bg-emerald-50/20"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0 font-bold text-xs border border-red-200">
-                            PDF
-                          </div>
-                          <div>
-                            <h4 className="text-xs font-bold text-slate-900">{m.judul}</h4>
-                            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{m.deskripsi}</p>
-                            <div className="flex flex-wrap items-center gap-2 mt-2">
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                                {m.mataPelajaran}
-                              </span>
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                                Sasaran: {m.kelasTarget.join(', ')}
-                              </span>
-                              <span className="text-[10px] text-slate-400">
-                                {m.fileName} • {m.fileSize}
-                              </span>
+                  {materials
+                    .filter((m) => {
+                      if (materialOwnerFilter === 'mine') {
+                        return (
+                          m.guruId === currentUser?.id ||
+                          (m.guruNama &&
+                            currentUser?.name &&
+                            m.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+                        );
+                      }
+                      return true;
+                    })
+                    .map((m) => {
+                      const isMaterialOwner =
+                        m.guruId === currentUser?.id ||
+                        (m.guruNama &&
+                          currentUser?.name &&
+                          m.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+                        (!m.guruId && !m.guruNama) ||
+                        currentUser?.role === 'admin';
+
+                      return (
+                        <div
+                          key={m.id}
+                          className="border border-slate-200 hover:border-emerald-300 rounded-xl p-4 transition bg-white hover:bg-emerald-50/20"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0 font-bold text-xs border border-red-200">
+                                PDF
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-bold text-slate-900">{m.judul}</h4>
+                                <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{m.deskripsi}</p>
+                                <div className="flex flex-wrap items-center gap-2 mt-2">
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                                    {m.mataPelajaran}
+                                  </span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                                    Sasaran: {m.kelasTarget.join(', ')}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">
+                                    {m.fileName} • {m.fileSize}
+                                  </span>
+                                  {m.guruNama && (
+                                    <span className="text-[10px] text-emerald-700 font-semibold">
+                                      Oleh: {m.guruNama}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                              {/* 1. LIHAT */}
+                              <button
+                                type="button"
+                                onClick={() => setSelectedMaterialForView(m)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs font-bold transition cursor-pointer"
+                                title="Pratinjau Materi Lengkap"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-emerald-700" />
+                                <span>Lihat</span>
+                              </button>
+
+                              {/* 2. CETAK */}
+                              <button
+                                type="button"
+                                onClick={() => printMaterialDirectly(m)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-white bg-emerald-700 hover:bg-emerald-800 text-xs font-bold transition cursor-pointer shadow-2xs"
+                                title="Cetak Lembar Modul"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                                <span>Cetak</span>
+                              </button>
+
+                              {/* 3. UNDUH */}
+                              <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden shadow-2xs">
+                                <button
+                                  type="button"
+                                  onClick={() => exportMaterialPdf(m)}
+                                  className="inline-flex items-center gap-1 px-2 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs transition cursor-pointer"
+                                  title="Unduh PDF Lembar Materi"
+                                >
+                                  <Download className="w-3.5 h-3.5 text-emerald-700" />
+                                  <span>PDF</span>
+                                </button>
+                                <a
+                                  href={`data:text/plain;charset=utf-8,${encodeURIComponent(
+                                    `[MAN 11 JAKARTA - MODUL PDF]\nJudul: ${m.judul}\nMapel: ${m.mataPelajaran}\nKelas: ${m.kelasTarget.join(', ')}\nDeskripsi: ${m.deskripsi}\nPengampu: ${m.guruNama}`
+                                  )}`}
+                                  download={m.fileName}
+                                  className="px-2 py-1.5 bg-white hover:bg-slate-50 text-slate-600 text-xs border-l border-slate-200 transition cursor-pointer"
+                                  title="Unduh File Asli"
+                                >
+                                  Asli
+                                </a>
+                              </div>
+
+                              {/* 4. HAPUS MATERI (Hanya jika milik guru sendiri atau admin) */}
+                              {isMaterialOwner ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (
+                                      confirm(
+                                        `Yakin ingin menghapus materi "${m.judul}"? Dokumen ini tidak akan dapat diakses lagi oleh siswa.`
+                                      )
+                                    ) {
+                                      deleteMaterial(m.id);
+                                      setUploadFeedback(`Materi "${m.judul}" berhasil dihapus.`);
+                                    }
+                                  }}
+                                  className="p-1.5 rounded-lg text-rose-500 hover:text-white hover:bg-rose-600 border border-rose-200 transition cursor-pointer"
+                                  title="Hapus Materi Milik Saya"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              ) : (
+                                <span
+                                  className="p-1.5 text-slate-300 cursor-not-allowed"
+                                  title={`Diunggah oleh ${m.guruNama || 'guru lain'}. Anda hanya dapat menghapus materi milik Anda sendiri.`}
+                                >
+                                  <Lock className="w-4 h-4" />
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => setPreviewMaterial(m)}
-                            className="p-1.5 rounded-lg text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 transition"
-                            title="Pratinjau Materi"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <a
-                            href={`data:text/plain;charset=utf-8,${encodeURIComponent(
-                              `[MAN 11 JAKARTA - MODUL PDF]\nJudul: ${m.judul}\nMapel: ${m.mataPelajaran}\nKelas: ${m.kelasTarget.join(', ')}\nDeskripsi: ${m.deskripsi}\nPengampu: ${m.guruNama}`
-                            )}`}
-                            download={m.fileName}
-                            className="p-1.5 rounded-lg text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition"
-                            title="Unduh File"
-                          >
-                            <Download className="w-4 h-4" />
-                          </a>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (confirm(`Hapus materi "${m.judul}"?`)) {
-                                deleteMaterial(m.id);
-                              }
-                            }}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
-                            title="Hapus Materi"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                      );
+                    })}
                 </div>
               )}
             </div>
@@ -1889,129 +2504,303 @@ export const GuruDashboard: React.FC = () => {
       )}
 
       {/* TAB 4: Koreksi & Rekap Nilai */}
-      {activeTab === 'koreksi' && activeExam && (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-          <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/50">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">
-                Rekapitulasi Nilai & Koreksi: {activeExam.judul}
-              </h3>
-              <p className="text-xs text-slate-500">
-                Total {examSubmissions.length} siswa telah mengirimkan lembar ujian.
-              </p>
+      {activeTab === 'koreksi' && activeExam && (() => {
+        const availableKoreksiClasses = Array.from(
+          new Set([
+            ...(activeExam.kelasTarget || []),
+            ...examSubmissions.map((s) => s.siswaKelas).filter(Boolean),
+          ])
+        ).sort();
+
+        const displayedSubmissions =
+          koreksiKelasFilter === 'all'
+            ? examSubmissions
+            : examSubmissions.filter(
+                (s) => (s.siswaKelas || '').trim().toLowerCase() === koreksiKelasFilter.trim().toLowerCase()
+              );
+
+        return (
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs space-y-0">
+            {/* Header Toolbar */}
+            <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/50 flex flex-col gap-4">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                      {activeExam.mataPelajaran}
+                    </span>
+                    <span className="text-xs text-slate-400">•</span>
+                    <span className="text-xs text-slate-600 font-semibold">
+                      Target: {activeExam.kelasTarget.join(', ')}
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900 mt-1">
+                    Rekapitulasi Nilai & Kelola Peserta: {activeExam.judul}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Menampilkan <strong>{displayedSubmissions.length}</strong> dari total <strong>{examSubmissions.length}</strong> siswa yang telah mengumpulkan lembar ujian.
+                  </p>
+                </div>
+
+                {/* Filter Kelas Selector */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 shadow-2xs">
+                    <span className="text-xs font-bold text-slate-600 whitespace-nowrap">Filter Kelas:</span>
+                    <select
+                      value={koreksiKelasFilter}
+                      onChange={(e) => setKoreksiKelasFilter(e.target.value)}
+                      className="text-xs font-bold text-slate-900 bg-transparent focus:outline-hidden cursor-pointer"
+                    >
+                      <option value="all">Semua Kelas ({examSubmissions.length} Siswa)</option>
+                      {availableKoreksiClasses.map((cls) => {
+                        const count = examSubmissions.filter(
+                          (s) => (s.siswaKelas || '').trim().toLowerCase() === cls.trim().toLowerCase()
+                        ).length;
+                        return (
+                          <option key={cls} value={cls}>
+                            Kelas {cls} ({count} siswa)
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons Toolbar: Unduh Excel Kelas, Unduh Laporan PDF, Unduh Soal PDF, Cetak Soal, Reset Kelas */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200">
+                {/* Export & Print actions */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Unduh Excel per kelas */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      exportGradesExcel(
+                        examSubmissions,
+                        activeExam,
+                        koreksiKelasFilter === 'all' ? undefined : koreksiKelasFilter
+                      )
+                    }
+                    disabled={displayedSubmissions.length === 0}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
+                    title={
+                      koreksiKelasFilter === 'all'
+                        ? 'Unduh Hasil Ujian Semua Kelas ke Excel (.xlsx)'
+                        : `Unduh Hasil Ujian Kelas ${koreksiKelasFilter} ke Excel (.xlsx)`
+                    }
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>
+                      {koreksiKelasFilter === 'all'
+                        ? 'Unduh Excel Nilai (.xlsx)'
+                        : `Unduh Excel Kelas ${koreksiKelasFilter}`}
+                    </span>
+                  </button>
+
+                  {/* Unduh Laporan Nilai PDF */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      exportGradesPdf({
+                        exam: activeExam,
+                        submissions: displayedSubmissions,
+                        allStudentsInClass: users.filter((u) => u.role === 'siswa'),
+                        kelasName: koreksiKelasFilter === 'all' ? (activeExam.kelasTarget[0] || 'Semua Kelas') : koreksiKelasFilter,
+                        guruName: currentUser?.name || 'Guru Pengampu',
+                        guruNip: currentUser?.nip,
+                      });
+                    }}
+                    disabled={displayedSubmissions.length === 0}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
+                    title="Unduh Laporan Rekap Nilai Format PDF Cetak Resmi"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Laporan Nilai (PDF)</span>
+                  </button>
+
+                  {/* Unduh Soal ke PDF */}
+                  <button
+                    type="button"
+                    onClick={() => exportExamPdf(activeExam, { includeAnswerKey: false })}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs shadow-xs transition cursor-pointer"
+                    title="Unduh Naskah Butir Soal Ujian ke PDF"
+                  >
+                    <Download className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Unduh Soal (PDF)</span>
+                  </button>
+
+                  {/* Cetak Soal Langsung */}
+                  <button
+                    type="button"
+                    onClick={() => printExamDirectly(activeExam, { includeAnswerKey: false })}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-bold text-xs shadow-xs transition cursor-pointer"
+                    title="Cetak Naskah Soal Ujian"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Cetak Soal</span>
+                  </button>
+                </div>
+
+                {/* Reset Ujian Per Kelas Action */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (koreksiKelasFilter === 'all') {
+                        alert(
+                          'Untuk melakukan Reset Per Kelas, silakan pilih salah satu kelas terlebih dahulu pada menu "Filter Kelas" di atas.'
+                        );
+                        return;
+                      }
+                      const countInClass = examSubmissions.filter(
+                        (s) =>
+                          (s.siswaKelas || '').trim().toLowerCase() ===
+                          koreksiKelasFilter.trim().toLowerCase()
+                      ).length;
+
+                      if (countInClass === 0) {
+                        alert(`Belum ada siswa di kelas "${koreksiKelasFilter}" yang mengumpulkan ujian ini.`);
+                        return;
+                      }
+
+                      if (
+                        confirm(
+                          `PERINGATAN RESET KELAS!\n\nApakah Anda yakin ingin mereset ujian seluruh siswa di kelas "${koreksiKelasFilter}" (${countInClass} siswa)?\n\nSemua lembar jawaban dan skor siswa kelas ${koreksiKelasFilter} pada ujian "${activeExam.judul}" akan dihapus dari server. Siswa di kelas ini dapat login kembali dan mengulang ujian.`
+                        )
+                      ) {
+                        resetExamParticipantsByClass(activeExam.id, koreksiKelasFilter);
+                        alert(`Ujian seluruh siswa kelas "${koreksiKelasFilter}" berhasil direset.`);
+                      }
+                    }}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer shadow-xs ${
+                      koreksiKelasFilter === 'all'
+                        ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                        : 'bg-rose-600 hover:bg-rose-700 text-white'
+                    }`}
+                    title={
+                      koreksiKelasFilter === 'all'
+                        ? 'Pilih kelas tertentu untuk mereset ujian per kelas'
+                        : `Reset ujian seluruh siswa kelas ${koreksiKelasFilter}`
+                    }
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>
+                      {koreksiKelasFilter === 'all'
+                        ? 'Reset Ujian Per Kelas'
+                        : `Reset Ujian Kelas ${koreksiKelasFilter}`}
+                    </span>
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  exportGradesPdf({
-                    exam: activeExam,
-                    submissions: examSubmissions,
-                    allStudentsInClass: users.filter((u) => u.role === 'siswa'),
-                    kelasName: activeExam.kelasTarget[0] || 'Semua Kelas',
-                    guruName: currentUser?.name || 'Guru Pengampu',
-                    guruNip: currentUser?.nip,
-                  });
-                }}
-                disabled={examSubmissions.length === 0}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md transition disabled:opacity-50 cursor-pointer"
-              >
-                <FileText className="w-4 h-4" />
-                <span>Unduh Laporan Nilai (PDF)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => exportGradesExcel(examSubmissions, activeExam)}
-                disabled={examSubmissions.length === 0}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition disabled:opacity-50 cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>Unduh Nilai (.xlsx)</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-              <thead className="bg-slate-50 font-bold text-slate-700">
-                <tr>
-                  <th className="px-4 py-3">Nama Siswa</th>
-                  <th className="px-4 py-3">Kelas</th>
-                  <th className="px-4 py-3">Skor Diperoleh</th>
-                  <th className="px-4 py-3">Nilai (/100)</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Pelanggaran Curang</th>
-                  <th className="px-4 py-3 text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {examSubmissions.length === 0 ? (
+            {/* Table of Submissions with Individual Reset Button */}
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+                <thead className="bg-slate-50 font-bold text-slate-700">
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                      Belum ada siswa yang mengumpulkan jawaban untuk ujian ini.
-                    </td>
+                    <th className="px-4 py-3">No</th>
+                    <th className="px-4 py-3">Nama Siswa</th>
+                    <th className="px-4 py-3">Kelas</th>
+                    <th className="px-4 py-3">Skor Diperoleh</th>
+                    <th className="px-4 py-3">Nilai (/100)</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Pelanggaran Curang</th>
+                    <th className="px-4 py-3 text-right">Aksi & Reset</th>
                   </tr>
-                ) : (
-                  examSubmissions.map((sub) => {
-                    const isPassed = sub.nilai100 >= activeExam.kkm;
-                    const violationCount = sub.violations?.length || 0;
-                    return (
-                      <tr key={sub.id} className="hover:bg-slate-50 transition">
-                        <td className="px-4 py-3 font-semibold text-slate-900">
-                          <div>{sub.siswaNama}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">NISN: {sub.siswaNisn}</div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 rounded bg-slate-100 font-bold text-[11px] text-slate-700">
-                            {sub.siswaKelas}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 font-mono font-semibold text-slate-700">
-                          {sub.totalSkor} / {sub.maxSkor}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-sm font-black text-indigo-700 font-mono">{sub.nilai100}</span>
-                          <span className="text-slate-400 text-[10px]"> / 100</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
-                              isPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
-                            {isPassed ? 'TUNTAS' : 'REMIDI'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {violationCount > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[10px] bg-rose-100 text-rose-800">
-                              <ShieldAlert className="w-3 h-3 text-rose-600" />
-                              {violationCount}x Peringatan
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {displayedSubmissions.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
+                        {koreksiKelasFilter === 'all'
+                          ? 'Belum ada siswa yang mengumpulkan jawaban untuk ujian ini.'
+                          : `Belum ada siswa dari kelas ${koreksiKelasFilter} yang mengumpulkan jawaban.`}
+                      </td>
+                    </tr>
+                  ) : (
+                    displayedSubmissions.map((sub, idx) => {
+                      const isPassed = sub.nilai100 >= activeExam.kkm;
+                      const violationCount = sub.violations?.length || 0;
+                      return (
+                        <tr key={sub.id} className="hover:bg-slate-50 transition">
+                          <td className="px-4 py-3 font-mono text-slate-400">{idx + 1}</td>
+                          <td className="px-4 py-3 font-semibold text-slate-900">
+                            <div>{sub.siswaNama}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">NISN: {sub.siswaNisn}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="px-2 py-0.5 rounded bg-slate-100 font-bold text-[11px] text-slate-700">
+                              {sub.siswaKelas}
                             </span>
-                          ) : (
-                            <span className="text-emerald-600 font-bold text-[11px]">Bersih (0)</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            onClick={() => openReviewModal(sub)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>Koreksi / Review</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                          </td>
+                          <td className="px-4 py-3 font-mono font-semibold text-slate-700">
+                            {sub.totalSkor} / {sub.maxSkor}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-sm font-black text-indigo-700 font-mono">{sub.nilai100}</span>
+                            <span className="text-slate-400 text-[10px]"> / 100</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                                isPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {isPassed ? 'TUNTAS' : 'REMIDI'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {violationCount > 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[10px] bg-rose-100 text-rose-800">
+                                <ShieldAlert className="w-3 h-3 text-rose-600" />
+                                {violationCount}x Peringatan
+                              </span>
+                            ) : (
+                              <span className="text-emerald-600 font-bold text-[11px]">Bersih (0)</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="inline-flex items-center gap-1.5 justify-end">
+                              <button
+                                type="button"
+                                onClick={() => openReviewModal(sub)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition cursor-pointer"
+                                title="Periksa Jawaban & Koreksi Manual"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Koreksi</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (
+                                    confirm(
+                                      `Yakin ingin mereset ujian siswa "${sub.siswaNama}" (${sub.siswaKelas})?\n\nLembar jawaban dan nilai siswa ini akan dihapus dari database. Siswa dapat login kembali untuk mengerjakan ulang ujian ini.`
+                                    )
+                                  ) {
+                                    resetExamSubmission(sub.id);
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs transition cursor-pointer"
+                                title="Reset Ujian Siswa Ini (Siswa bisa mengulang ujian)"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Reset Siswa</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* TAB 5: Analisis Butir Soal */}
       {activeTab === 'analisis' && activeExam && (
@@ -2765,6 +3554,60 @@ export const GuruDashboard: React.FC = () => {
           totalExistingQuestions={activeExam?.soalList.length || 0}
         />
       )}
+
+      {/* Modal Lihat & Cetak / Unduh Naskah Soal Asesmen */}
+      <ExamViewModal
+        exam={selectedExamForView}
+        isOpen={Boolean(selectedExamForView)}
+        onClose={() => setSelectedExamForView(null)}
+        canEdit={true}
+        onEditSoal={(ex) => {
+          setSelectedExamId(ex.id);
+          setActiveTab('ujian');
+        }}
+        canDelete={Boolean(
+          selectedExamForView &&
+            (selectedExamForView.guruId === currentUser?.id ||
+              (selectedExamForView.guruNama &&
+                currentUser?.name &&
+                selectedExamForView.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+              (!selectedExamForView.guruId && !selectedExamForView.guruNama) ||
+              currentUser?.role === 'admin')
+        )}
+        onDelete={(ex) => {
+          if (
+            confirm(
+              `Yakin ingin menghapus asesmen "${ex.judul}"? Semua butir soal (${ex.soalList.length} butir) dan riwayat nilai siswa terkait akan dihapus permanen.`
+            )
+          ) {
+            deleteExam(ex.id);
+            setSelectedExamForView(null);
+          }
+        }}
+      />
+
+      {/* Modal Lihat & Cetak / Unduh Materi Pembelajaran */}
+      <MaterialViewModal
+        material={selectedMaterialForView}
+        isOpen={Boolean(selectedMaterialForView)}
+        onClose={() => setSelectedMaterialForView(null)}
+        canDelete={Boolean(
+          selectedMaterialForView &&
+            (selectedMaterialForView.guruId === currentUser?.id ||
+              (selectedMaterialForView.guruNama &&
+                currentUser?.name &&
+                selectedMaterialForView.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+              (!selectedMaterialForView.guruId && !selectedMaterialForView.guruNama) ||
+              currentUser?.role === 'admin')
+        )}
+        onDelete={(m) => {
+          if (confirm(`Yakin ingin menghapus materi "${m.judul}"? File materi tidak akan dapat diakses siswa lagi.`)) {
+            deleteMaterial(m.id);
+            setSelectedMaterialForView(null);
+            setUploadFeedback(`Materi "${m.judul}" berhasil dihapus.`);
+          }
+        }}
+      />
     </div>
   );
 };
