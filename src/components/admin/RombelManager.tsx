@@ -32,7 +32,7 @@ export const RombelManager: React.FC<RombelManagerProps> = ({ onSelectPlotting }
   const [formData, setFormData] = useState({
     nama: '',
     tingkat: 'X',
-    jurusan: 'MIPA',
+    jurusan: 'Umum',
     waliKelasId: '',
     tahunAjaran: '2025/2026',
     kapasitas: 36,
@@ -58,7 +58,7 @@ export const RombelManager: React.FC<RombelManagerProps> = ({ onSelectPlotting }
     setFormData({
       nama: '',
       tingkat: 'X',
-      jurusan: 'MIPA',
+      jurusan: 'Umum',
       waliKelasId: '',
       tahunAjaran: '2025/2026',
       kapasitas: 36,
@@ -348,7 +348,7 @@ export const RombelManager: React.FC<RombelManagerProps> = ({ onSelectPlotting }
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: X MIPA 3, XI IPS 2, XII BAHASA 1"
+                  placeholder="Contoh: X 1, X 2, XI 1, XII 2"
                   value={formData.nama}
                   onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
                   className="w-full px-3.5 py-2.5 text-xs font-bold border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
@@ -370,17 +370,16 @@ export const RombelManager: React.FC<RombelManagerProps> = ({ onSelectPlotting }
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Peminatan / Jurusan *</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Peminatan / Program *</label>
                   <select
                     value={formData.jurusan}
                     onChange={(e) => setFormData({ ...formData, jurusan: e.target.value })}
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white font-semibold"
                   >
-                    <option value="MIPA">MIPA (Matematika & Sains)</option>
-                    <option value="IPS">IPS (Ilmu Pengetahuan Sosial)</option>
-                    <option value="Bahasa">Bahasa & Budaya</option>
+                    <option value="Umum">Umum (Reguler / Fase E)</option>
+                    <option value="Peminatan">Peminatan / Pilihan (Fase F)</option>
                     <option value="Keagamaan">Keagamaan / PAI</option>
-                    <option value="Umum">Umum</option>
+                    <option value="Bahasa">Bahasa & Budaya</option>
                   </select>
                 </div>
               </div>

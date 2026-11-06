@@ -85,7 +85,7 @@ export const AdminDashboard: React.FC = () => {
     'daftar' | 'siswa_kelas' | 'rombel' | 'mapel' | 'plotting' | 'asesmen_guru' | 'materi_guru' | 'import' | 'manual'
   >('daftar');
   const [navOrientation, setNavOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
-  const [plottingTargetKelas, setPlottingTargetKelas] = useState<string>('X MIPA 1');
+  const [plottingTargetKelas, setPlottingTargetKelas] = useState<string>('X 1');
   const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
   const [kelasFilter, setKelasFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -114,7 +114,7 @@ export const AdminDashboard: React.FC = () => {
     username: '',
     password: '',
     role: 'siswa' as UserRole,
-    kelas: 'X MIPA 1',
+    kelas: 'X 1',
     nipNisn: '',
     email: '',
     mataPelajaran: '',
@@ -172,7 +172,7 @@ export const AdminDashboard: React.FC = () => {
       nisn: formData.role === 'siswa' ? formData.nipNisn : undefined,
       email: formData.email || `${formData.username}@sekolah.sch.id`,
       mataPelajaran: formData.role === 'guru' ? formData.mataPelajaran : undefined,
-      kelasAjar: formData.role === 'guru' ? ['X MIPA 1', 'X MIPA 2', 'XI MIPA 1'] : undefined,
+      kelasAjar: formData.role === 'guru' ? ['X 1', 'X 2', 'XI 1'] : undefined,
       status: 'aktif',
     });
 
@@ -181,7 +181,7 @@ export const AdminDashboard: React.FC = () => {
       username: '',
       password: '',
       role: 'siswa',
-      kelas: 'X MIPA 1',
+      kelas: 'X 1',
       nipNisn: '',
       email: '',
       mataPelajaran: '',
@@ -233,7 +233,7 @@ export const AdminDashboard: React.FC = () => {
 
     try {
       // Parse format PDF/Text seperti:
-      // "1. Budi Santoso, 0076543201, siswa, X MIPA 1, budi123"
+      // "1. Budi Santoso, 0076543201, siswa, X 1, budi123"
       // atau tab-separated list
       const lines = pastedPdfText.split('\n').filter((l) => l.trim().length > 0);
       const imported: Partial<User>[] = [];
@@ -802,7 +802,7 @@ export const AdminDashboard: React.FC = () => {
                                   updateUser({
                                     ...u,
                                     role: nextRole,
-                                    kelas: nextRole === 'siswa' ? (u.kelas || 'X MIPA 1') : undefined,
+                                    kelas: nextRole === 'siswa' ? (u.kelas || 'X 1') : undefined,
                                     mataPelajaran: nextRole === 'guru' ? (u.mataPelajaran || 'Biologi') : undefined,
                                   });
                                 }
@@ -1452,7 +1452,7 @@ export const AdminDashboard: React.FC = () => {
                   rows={5}
                   value={pastedPdfText}
                   onChange={(e) => setPastedPdfText(e.target.value)}
-                  placeholder={`Contoh format (tiap baris):&#10;1. Rizky Pratama, 0081234567, siswa, X MIPA 1, rizky123&#10;2. Drs. Supriyanto, 197401012000031001, guru, -, pass123`}
+                  placeholder={`Contoh format (tiap baris):&#10;1. Rizky Pratama, 0081234567, siswa, X 1, rizky123&#10;2. Drs. Supriyanto, 197401012000031001, guru, -, pass123`}
                   className="w-full text-xs font-mono p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-slate-50"
                 />
               </div>
@@ -1733,7 +1733,7 @@ export const AdminDashboard: React.FC = () => {
                           ...editingUser,
                           role: 'siswa',
                           mataPelajaran: undefined,
-                          kelas: editingUser.kelas || 'X MIPA 1',
+                          kelas: editingUser.kelas || 'X 1',
                         })
                       }
                       className={`py-2 px-3 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 transition cursor-pointer ${

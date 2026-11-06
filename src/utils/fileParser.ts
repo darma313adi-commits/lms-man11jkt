@@ -107,14 +107,35 @@ export async function parseExcelUsers(file: File): Promise<Partial<User>[]> {
       const finalUsername = String(username || nipNisn).trim().toLowerCase().replace(/\s+/g, '_');
       
       // Kelas hanya untuk siswa, atau jika guru untuk kelasAjar
-      const cleanKelas = rawKelas ? rawKelas.trim().replace(/\s+/g, ' ') : undefined;
+      const rawCleaned = rawKelas ? rawKelas.trim().replace(/\s+/g, ' ') : undefined;
+      const cleanKelas = rawCleaned
+        ? rawCleaned
+            .replace(/XI\s+IPS\s+1/gi, 'XI 3')
+            .replace(/XI\s+IPS\s+2/gi, 'XI 4')
+            .replace(/XII\s+IPS\s+1/gi, 'XII 2')
+            .replace(/XII\s+IPS\s+2/gi, 'XII 3')
+            .replace(/\b(MIPA|MIA|IPA|IPS)\s*/gi, '')
+            .trim()
+        : undefined;
       const finalKelas = role === 'siswa' && cleanKelas ? cleanKelas : undefined;
       
       const teacherKelasAjar =
         getVal(['kelasyangdiajar', 'kelasajar', 'kelasdiampu', 'daftarkelas', 'daftarruang']) || cleanKelas;
       const finalKelasAjar =
         role === 'guru' && teacherKelasAjar
-          ? teacherKelasAjar.split(',').map((k) => k.trim()).filter(Boolean)
+          ? teacherKelasAjar
+              .split(',')
+              .map((k) =>
+                k
+                  .trim()
+                  .replace(/XI\s+IPS\s+1/gi, 'XI 3')
+                  .replace(/XI\s+IPS\s+2/gi, 'XI 4')
+                  .replace(/XII\s+IPS\s+1/gi, 'XII 2')
+                  .replace(/XII\s+IPS\s+2/gi, 'XII 3')
+                  .replace(/\b(MIPA|MIA|IPA|IPS)\s*/gi, '')
+                  .trim()
+              )
+              .filter(Boolean)
           : undefined;
 
       parsedUsers.push({
@@ -156,7 +177,7 @@ export function downloadUserTemplateExcel() {
       'Username': 'ahmad_fauzi',
       'Password': 'password123',
       'Role': 'siswa',
-      'Kelas': 'X MIPA 1',
+      'Kelas': 'X 1',
       'NIP / NISN': '0067823411',
       'Email': 'ahmad.fauzi@siswa.sch.id',
       'Mata Pelajaran': '',
@@ -166,7 +187,7 @@ export function downloadUserTemplateExcel() {
       'Username': 'rani_anggraini',
       'Password': 'password123',
       'Role': 'siswa',
-      'Kelas': 'X MIPA 2',
+      'Kelas': 'X 2',
       'NIP / NISN': '0067823412',
       'Email': 'rani.a@siswa.sch.id',
       'Mata Pelajaran': '',
@@ -176,7 +197,7 @@ export function downloadUserTemplateExcel() {
       'Username': 'bagus_p',
       'Password': 'password123',
       'Role': 'siswa',
-      'Kelas': 'XI MIPA 1',
+      'Kelas': 'XI 1',
       'NIP / NISN': '0067823413',
       'Email': 'bagus.p@siswa.sch.id',
       'Mata Pelajaran': '',
@@ -186,7 +207,7 @@ export function downloadUserTemplateExcel() {
       'Username': 'dewi_lestari',
       'Password': 'password123',
       'Role': 'siswa',
-      'Kelas': 'XI MIPA 2',
+      'Kelas': 'XI 2',
       'NIP / NISN': '0067823414',
       'Email': 'dewi.l@siswa.sch.id',
       'Mata Pelajaran': '',
@@ -196,7 +217,7 @@ export function downloadUserTemplateExcel() {
       'Username': 'rizky_p',
       'Password': 'password123',
       'Role': 'siswa',
-      'Kelas': 'XII MIPA 1',
+      'Kelas': 'XII 1',
       'NIP / NISN': '0067823415',
       'Email': 'rizky.p@siswa.sch.id',
       'Mata Pelajaran': '',
@@ -222,7 +243,7 @@ export function downloadGuruTemplateExcel() {
       'NIP': '197604122003122001',
       'Email': 'siti.nurhaliza@man11jakarta.sch.id',
       'Mata Pelajaran Diampu': 'Biologi',
-      'Kelas yang Diajar': 'X MIPA 1, X MIPA 2, XI MIPA 1',
+      'Kelas yang Diajar': 'X 1, X 2, XI 1',
     },
     {
       'Nama Lengkap (dengan Gelar)': 'Ahmad Fauzan, S.Pd, M.Si',
@@ -232,7 +253,7 @@ export function downloadGuruTemplateExcel() {
       'NIP': '198103192008011005',
       'Email': 'ahmad.fauzan@man11jakarta.sch.id',
       'Mata Pelajaran Diampu': 'Fisika',
-      'Kelas yang Diajar': 'X MIPA 1, X MIPA 2',
+      'Kelas yang Diajar': 'X 1, X 2',
     },
     {
       'Nama Lengkap (dengan Gelar)': 'Nurul Hidayah, S.Pd',
@@ -242,7 +263,7 @@ export function downloadGuruTemplateExcel() {
       'NIP': '198509212010012008',
       'Email': 'nurul.hidayah@man11jakarta.sch.id',
       'Mata Pelajaran Diampu': 'Kimia',
-      'Kelas yang Diajar': 'XI MIPA 1, XI MIPA 2',
+      'Kelas yang Diajar': 'XI 1, XI 2',
     },
     {
       'Nama Lengkap (dengan Gelar)': 'Rahmat Hidayat, M.Kom',
@@ -252,7 +273,7 @@ export function downloadGuruTemplateExcel() {
       'NIP': '198811052014021003',
       'Email': 'rahmat.h@man11jakarta.sch.id',
       'Mata Pelajaran Diampu': 'Informatika',
-      'Kelas yang Diajar': 'X MIPA 1, X MIPA 2, X IPS 1',
+      'Kelas yang Diajar': 'X 1, X 2, X 3',
     },
   ];
 

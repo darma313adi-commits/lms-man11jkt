@@ -27,14 +27,18 @@ interface ExamSettingsModalProps {
 }
 
 export const ALL_CLASSES_LIST = [
-  'X MIPA 1',
-  'X MIPA 2',
-  'XI MIPA 1',
-  'XI MIPA 2',
-  'XI IPS 1',
-  'XI IPS 2',
-  'XII MIPA 1',
-  'XII IPS 1',
+  'X 1',
+  'X 2',
+  'X 3',
+  'X 4',
+  'XI 1',
+  'XI 2',
+  'XI 3',
+  'XI 4',
+  'XII 1',
+  'XII 2',
+  'XII 3',
+  'XII 4',
   'Semua Kelas',
 ];
 
@@ -56,7 +60,7 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
   const [selectedClasses, setSelectedClasses] = useState<string[]>(() => {
     return exam.kelasTarget && exam.kelasTarget.length > 0
       ? exam.kelasTarget
-      : ['X MIPA 1', 'X MIPA 2'];
+      : ['X 1', 'X 2'];
   });
   const [waktuMulai, setWaktuMulai] = useState<string>(exam.waktuMulai || '');
   const [waktuKadaluarsa, setWaktuKadaluarsa] = useState<string>(exam.waktuKadaluarsa || '');
@@ -125,7 +129,7 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
   const toggleClass = (kelasName: string) => {
     if (kelasName === 'Semua Kelas') {
       if (selectedClasses.includes('Semua Kelas')) {
-        setSelectedClasses(['X MIPA 1', 'X MIPA 2']);
+        setSelectedClasses(['X 1', 'X 2']);
       } else {
         setSelectedClasses(['Semua Kelas']);
       }

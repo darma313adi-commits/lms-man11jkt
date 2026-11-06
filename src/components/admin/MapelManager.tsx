@@ -33,17 +33,17 @@ export const MapelManager: React.FC = () => {
   const [formData, setFormData] = useState({
     kode: '',
     nama: '',
-    kategori: 'Peminatan MIPA',
+    kategori: 'Mata Pelajaran Pilihan',
     kkmDefault: 75,
     jamPerMinggu: 4,
   });
 
   const categories = [
-    'Peminatan MIPA',
-    'Peminatan IPS',
+    'Mata Pelajaran Pilihan',
     'Umum / Wajib',
-    'Peminatan Bahasa',
     'Keagamaan',
+    'Peminatan Bahasa',
+    'Muatan Lokal',
   ];
 
   const filteredMapel = mataPelajaranList.filter((m) => {
@@ -63,7 +63,7 @@ export const MapelManager: React.FC = () => {
     setFormData({
       kode: '',
       nama: '',
-      kategori: 'Peminatan MIPA',
+      kategori: 'Mata Pelajaran Pilihan',
       kkmDefault: 75,
       jamPerMinggu: 4,
     });
@@ -135,28 +135,28 @@ export const MapelManager: React.FC = () => {
         <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs">
           <div className="flex items-center gap-2 text-emerald-600 text-xs font-bold">
             <Sparkles className="w-4 h-4" />
-            <span>Peminatan MIPA</span>
+            <span>Mapel Pilihan</span>
           </div>
           <p className="text-2xl font-black text-slate-800 mt-1">
-            {mataPelajaranList.filter((m) => m.kategori.includes('MIPA')).length} Mapel
+            {mataPelajaranList.filter((m) => m.kategori.includes('Pilihan')).length} Mapel
           </p>
         </div>
         <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs">
           <div className="flex items-center gap-2 text-blue-600 text-xs font-bold">
             <Layers className="w-4 h-4" />
-            <span>Peminatan IPS</span>
+            <span>Umum / Wajib</span>
           </div>
           <p className="text-2xl font-black text-slate-800 mt-1">
-            {mataPelajaranList.filter((m) => m.kategori.includes('IPS')).length} Mapel
+            {mataPelajaranList.filter((m) => m.kategori.includes('Umum')).length} Mapel
           </p>
         </div>
         <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs">
           <div className="flex items-center gap-2 text-amber-600 text-xs font-bold">
             <Award className="w-4 h-4" />
-            <span>Umum / Wajib</span>
+            <span>Keagamaan & Bahasa</span>
           </div>
           <p className="text-2xl font-black text-slate-800 mt-1">
-            {mataPelajaranList.filter((m) => m.kategori.includes('Umum')).length} Mapel
+            {mataPelajaranList.filter((m) => m.kategori.includes('Agama') || m.kategori.includes('Bahasa')).length} Mapel
           </p>
         </div>
       </div>
@@ -237,9 +237,9 @@ export const MapelManager: React.FC = () => {
                     <td className="px-4 py-3.5 whitespace-nowrap">
                       <span
                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          m.kategori.includes('MIPA')
+                          m.kategori.includes('Pilihan')
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : m.kategori.includes('IPS')
+                            : m.kategori.includes('Umum')
                             ? 'bg-blue-50 text-blue-700 border border-blue-200'
                             : 'bg-amber-50 text-amber-700 border border-amber-200'
                         }`}

@@ -2,9 +2,9 @@ export type UserRole = 'admin' | 'guru' | 'siswa';
 
 export interface RombelKelas {
   id: string;
-  nama: string; // e.g. 'X MIPA 1', 'XI IPS 2'
+  nama: string; // e.g. 'X 1', 'XI 2'
   tingkat: 'X' | 'XI' | 'XII' | string;
-  jurusan: 'MIPA' | 'IPS' | 'Bahasa' | 'Keagamaan' | 'Umum' | string;
+  jurusan: 'Umum' | 'Peminatan' | 'Keagamaan' | 'Bahasa' | string;
   waliKelasId?: string;
   waliKelasNama?: string;
   tahunAjaran?: string; // e.g. '2025/2026'
@@ -16,8 +16,8 @@ export interface RombelKelas {
 export interface MataPelajaran {
   id: string;
   kode: string; // e.g. 'BIO-01', 'MAT-W'
-  nama: string; // e.g. 'Biologi', 'Matematika Peminatan'
-  kategori: 'Peminatan MIPA' | 'Peminatan IPS' | 'Umum / Wajib' | 'Peminatan Bahasa' | 'Keagamaan' | string;
+  nama: string; // e.g. 'Biologi', 'Matematika Pilihan'
+  kategori: 'Mata Pelajaran Pilihan' | 'Umum / Wajib' | 'Peminatan Bahasa' | 'Keagamaan' | 'Muatan Lokal' | string;
   kkmDefault: number;
   jamPerMinggu?: number;
   createdAt?: string;
@@ -25,7 +25,7 @@ export interface MataPelajaran {
 
 export interface KelasMapelPengampu {
   id: string;
-  kelasNama: string; // e.g. 'X MIPA 1'
+  kelasNama: string; // e.g. 'X 1', 'XI 2'
   mapelId: string;
   mapelNama: string;
   mapelKode?: string;
@@ -43,7 +43,7 @@ export interface User {
   name: string;
   email?: string;
   role: UserRole;
-  kelas?: string; // Khusus siswa e.g., 'X MIPA 1', 'XI IPS 2'
+  kelas?: string; // Khusus siswa e.g., 'X 1', 'XI 2'
   nip?: string;
   nisn?: string;
   mataPelajaran?: string; // Khusus guru
