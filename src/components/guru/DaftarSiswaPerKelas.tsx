@@ -32,7 +32,7 @@ export const DaftarSiswaPerKelas: React.FC = () => {
     const list = Array.from(
       new Set(allStudents.map((s) => s.kelas?.trim()).filter(Boolean) as string[])
     ).sort();
-    return list.length > 0 ? list : ['X 1', 'X 2', 'XI 1', 'XI 2', 'XII 1'];
+    return list.length > 0 ? list : ['XI 2', 'XI 3', 'XI 4', 'XII 1', 'XII 2'];
   }, [allStudents]);
 
   const [selectedClass, setSelectedClass] = useState<string>('all');
