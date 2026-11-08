@@ -17,16 +17,16 @@ test('urlHelper: should convert ais-dev domain to ais-pre domain for public acce
     'https://ais-pre-qxv52tf4ojyvuyhwdnn3zn-454083593677.asia-southeast1.run.app'
   );
 
-  const publicGuruLink = buildLoginUrl('guru', 'guru_bambang', true);
+  const publicGuruLink = buildLoginUrl('guru', 'guru_fauzan', true);
   assert.strictEqual(
     publicGuruLink,
-    'https://ais-pre-qxv52tf4ojyvuyhwdnn3zn-454083593677.asia-southeast1.run.app/?role=guru&user=guru_bambang'
+    'https://ais-pre-qxv52tf4ojyvuyhwdnn3zn-454083593677.asia-southeast1.run.app/?role=guru&user=guru_fauzan'
   );
 
-  const devGuruLink = buildLoginUrl('guru', 'guru_bambang', false);
+  const devGuruLink = buildLoginUrl('guru', 'guru_fauzan', false);
   assert.strictEqual(
     devGuruLink,
-    'https://ais-dev-qxv52tf4ojyvuyhwdnn3zn-454083593677.asia-southeast1.run.app/?role=guru&user=guru_bambang'
+    'https://ais-dev-qxv52tf4ojyvuyhwdnn3zn-454083593677.asia-southeast1.run.app/?role=guru&user=guru_fauzan'
   );
 });
 

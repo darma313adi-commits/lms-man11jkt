@@ -9,6 +9,8 @@ export interface GradeReportPdfParams {
   kelasName: string;
   guruName: string;
   guruNip?: string;
+  kamadName?: string;
+  kamadNip?: string;
 }
 
 export function exportGradesPdf({
@@ -18,6 +20,8 @@ export function exportGradesPdf({
   kelasName,
   guruName,
   guruNip,
+  kamadName,
+  kamadNip,
 }: GradeReportPdfParams) {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -243,8 +247,8 @@ export function exportGradesPdf({
   // Left: Kepala Madrasah
   doc.text('Mengetahui,', 25, signPageY);
   doc.text('Kepala MAN 11 Jakarta', 25, signPageY + 5);
-  doc.text('H. Darma Adi Saputra, M.Pd', 25, signPageY + 28);
-  doc.text('NIP. 197803152003121002', 25, signPageY + 33);
+  doc.text(kamadName || 'Drs. H. Ahmad Fauzi, M.Pd.I', 25, signPageY + 28);
+  doc.text(`NIP. ${kamadNip || '196807121995031002'}`, 25, signPageY + 33);
 
   // Right: Guru Mata Pelajaran
   const rightSignX = pageWidth - 65;

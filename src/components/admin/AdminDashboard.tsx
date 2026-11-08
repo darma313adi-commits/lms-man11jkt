@@ -114,7 +114,7 @@ export const AdminDashboard: React.FC = () => {
     username: '',
     password: '',
     role: 'siswa' as UserRole,
-    kelas: 'X 1',
+    kelas: 'XII 1',
     nipNisn: '',
     email: '',
     mataPelajaran: '',
@@ -168,11 +168,11 @@ export const AdminDashboard: React.FC = () => {
       password: formData.password,
       role: formData.role,
       kelas: formData.role === 'siswa' ? formData.kelas : undefined,
-      nip: formData.role === 'guru' ? formData.nipNisn : undefined,
+      nip: (formData.role === 'guru' || formData.role === 'kepala_madrasah') ? formData.nipNisn : undefined,
       nisn: formData.role === 'siswa' ? formData.nipNisn : undefined,
-      email: formData.email || `${formData.username}@sekolah.sch.id`,
+      email: formData.email || `${formData.username}@man11jakarta.sch.id`,
       mataPelajaran: formData.role === 'guru' ? formData.mataPelajaran : undefined,
-      kelasAjar: formData.role === 'guru' ? ['X 1', 'X 2', 'XI 1'] : undefined,
+      kelasAjar: formData.role === 'guru' ? ['XII 1', 'XII 2'] : undefined,
       status: 'aktif',
     });
 
@@ -181,7 +181,7 @@ export const AdminDashboard: React.FC = () => {
       username: '',
       password: '',
       role: 'siswa',
-      kelas: 'X 1',
+      kelas: 'XII 1',
       nipNisn: '',
       email: '',
       mataPelajaran: '',
@@ -623,6 +623,7 @@ export const AdminDashboard: React.FC = () => {
                   className="text-xs bg-white border border-slate-300 rounded-xl px-3 py-2 font-medium"
                 >
                   <option value="all">Semua Peran</option>
+                  <option value="kepala_madrasah">Kepala Madrasah</option>
                   <option value="guru">Guru Saja</option>
                   <option value="siswa">Siswa Saja</option>
                   <option value="admin">Admin</option>
@@ -766,15 +767,18 @@ export const AdminDashboard: React.FC = () => {
                           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider ${
                             u.role === 'admin'
                               ? 'bg-rose-100 text-rose-800'
+                              : u.role === 'kepala_madrasah'
+                              ? 'bg-purple-100 text-purple-900 border border-purple-200'
                               : u.role === 'guru'
                               ? 'bg-blue-100 text-blue-800'
                               : 'bg-emerald-100 text-emerald-800'
                           }`}
                         >
                           {u.role === 'admin' && <Shield className="w-3 h-3" />}
+                          {u.role === 'kepala_madrasah' && <Award className="w-3 h-3 text-purple-700" />}
                           {u.role === 'guru' && <BookOpen className="w-3 h-3" />}
                           {u.role === 'siswa' && <GraduationCap className="w-3 h-3" />}
-                          {u.role}
+                          {u.role === 'kepala_madrasah' ? 'Kepala Madrasah' : u.role}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -1484,11 +1488,11 @@ export const AdminDashboard: React.FC = () => {
               </p>
             </div>
             {/* Quick Role Select Buttons */}
-            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
               <button
                 type="button"
                 onClick={() => setFormData({ ...formData, role: 'admin' })}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition ${
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
                   formData.role === 'admin'
                     ? 'bg-rose-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -1498,8 +1502,19 @@ export const AdminDashboard: React.FC = () => {
               </button>
               <button
                 type="button"
+                onClick={() => setFormData({ ...formData, role: 'kepala_madrasah' })}
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
+                  formData.role === 'kepala_madrasah'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                + Kepala Madrasah
+              </button>
+              <button
+                type="button"
                 onClick={() => setFormData({ ...formData, role: 'guru' })}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition ${
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
                   formData.role === 'guru'
                     ? 'bg-blue-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -1510,7 +1525,7 @@ export const AdminDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setFormData({ ...formData, role: 'siswa' })}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition ${
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
                   formData.role === 'siswa'
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -1531,6 +1546,7 @@ export const AdminDashboard: React.FC = () => {
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl font-bold bg-white"
                 >
                   <option value="admin">Administrator (Hak Akses Penuh)</option>
+                  <option value="kepala_madrasah">Kepala Madrasah (Pimpinan / Pengawas Madrasah)</option>
                   <option value="guru">Guru / Tenaga Pendidik</option>
                   <option value="siswa">Siswa / Peserta Didik</option>
                 </select>
@@ -1540,6 +1556,13 @@ export const AdminDashboard: React.FC = () => {
                 <div className="sm:col-span-1 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-[11px] text-rose-900 flex items-center gap-2">
                   <Shield className="w-4 h-4 text-rose-600 shrink-0" />
                   <span>Akun Administrator baru dapat mengelola seluruh data guru, siswa, kelas, dan akun admin lainnya.</span>
+                </div>
+              )}
+
+              {formData.role === 'kepala_madrasah' && (
+                <div className="sm:col-span-1 p-2.5 bg-purple-50 border border-purple-200 rounded-xl text-[11px] text-purple-900 flex items-center gap-2">
+                  <Award className="w-4 h-4 text-purple-600 shrink-0" />
+                  <span>Akun Kepala Madrasah memiliki akses manajerial untuk memantau seluruh asesmen, nilai ujian, materi ajar, dan rekap kurikulum.</span>
                 </div>
               )}
 
@@ -1620,24 +1643,35 @@ export const AdminDashboard: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  {formData.role === 'guru' ? 'NIP' : 'NISN'}
+                  {formData.role === 'kepala_madrasah'
+                    ? 'NIP Kepala Madrasah *'
+                    : formData.role === 'guru'
+                    ? 'NIP Guru *'
+                    : 'NISN Siswa *'}
                 </label>
                 <input
                   type="text"
+                  required={formData.role === 'kepala_madrasah'}
                   value={formData.nipNisn}
                   onChange={(e) => setFormData({ ...formData, nipNisn: e.target.value })}
-                  placeholder={formData.role === 'guru' ? 'Nomor Induk Pegawai' : 'Nomor Induk Siswa Nasional'}
+                  placeholder={
+                    formData.role === 'kepala_madrasah'
+                      ? 'Contoh: 196807121995031002'
+                      : formData.role === 'guru'
+                      ? 'Nomor Induk Pegawai Guru'
+                      : 'Nomor Induk Siswa Nasional'
+                  }
                   className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-xl"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Email Sekolah</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Email Sekolah / Madrasah</label>
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="user@sekolah.sch.id"
+                  placeholder="user@man11jakarta.sch.id"
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
                 />
               </div>
@@ -1663,11 +1697,22 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* Edit User Modal */}
+      {/* Modal Edit Data Pengguna (Scrollable) */}
       {editingUser && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 animate-in fade-in zoom-in-95">
-            <h3 className="text-base font-bold text-slate-900 mb-4">Edit Data Pengguna</h3>
-            <div className="space-y-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 my-auto">
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/70">
+              <h3 className="text-base font-bold text-slate-900">Edit Data Pengguna</h3>
+              <button
+                type="button"
+                onClick={() => setEditingUser(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-5 sm:p-6 space-y-4 flex-1 overscroll-contain">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Nama Lengkap</label>
                 <input
@@ -1699,13 +1744,55 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Role Switcher (Requirement #5: Admin bisa mengubah akun siswa menjadi guru atau sebaliknya) */}
+              {/* Input NIP atau NISN */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  {editingUser.role === 'siswa'
+                    ? 'NISN (Nomor Induk Siswa Nasional)'
+                    : 'NIP (Nomor Induk Pegawai)'}
+                </label>
+                <input
+                  type="text"
+                  value={editingUser.role === 'siswa' ? (editingUser.nisn || '') : (editingUser.nip || '')}
+                  onChange={(e) => {
+                    if (editingUser.role === 'siswa') {
+                      setEditingUser({ ...editingUser, nisn: e.target.value });
+                    } else {
+                      setEditingUser({ ...editingUser, nip: e.target.value });
+                    }
+                  }}
+                  placeholder={editingUser.role === 'siswa' ? 'Contoh: 0076543201' : 'Contoh: 196807121995031002'}
+                  className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              {/* Role Switcher */}
               {editingUser.username !== 'darma313adi' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Peran Akun (Role: Siswa ↔ Guru)
+                    Peran Akun (Role)
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingUser({
+                          ...editingUser,
+                          role: 'kepala_madrasah',
+                          kelas: undefined,
+                          mataPelajaran: undefined,
+                        })
+                      }
+                      className={`py-2 px-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1 transition cursor-pointer ${
+                        editingUser.role === 'kepala_madrasah'
+                          ? 'bg-purple-50 border-purple-500 text-purple-700 ring-2 ring-purple-500/20'
+                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Award className="w-3.5 h-3.5" />
+                      <span>Kamad</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() =>
@@ -1716,14 +1803,14 @@ export const AdminDashboard: React.FC = () => {
                           mataPelajaran: editingUser.mataPelajaran || 'Biologi',
                         })
                       }
-                      className={`py-2 px-3 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                      className={`py-2 px-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1 transition cursor-pointer ${
                         editingUser.role === 'guru'
                           ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500/20'
                           : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                       }`}
                     >
                       <BookOpen className="w-3.5 h-3.5" />
-                      <span>Akun Guru</span>
+                      <span>Guru</span>
                     </button>
 
                     <button
@@ -1733,17 +1820,17 @@ export const AdminDashboard: React.FC = () => {
                           ...editingUser,
                           role: 'siswa',
                           mataPelajaran: undefined,
-                          kelas: editingUser.kelas || 'X 1',
+                          kelas: editingUser.kelas || 'XII 1',
                         })
                       }
-                      className={`py-2 px-3 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                      className={`py-2 px-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1 transition cursor-pointer ${
                         editingUser.role === 'siswa'
                           ? 'bg-emerald-50 border-emerald-500 text-emerald-700 ring-2 ring-emerald-500/20'
                           : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                       }`}
                     >
                       <GraduationCap className="w-3.5 h-3.5" />
-                      <span>Akun Siswa</span>
+                      <span>Siswa</span>
                     </button>
                   </div>
                 </div>
@@ -1783,26 +1870,26 @@ export const AdminDashboard: React.FC = () => {
                   </select>
                 </div>
               )}
+            </div>
 
-              <div className="flex justify-end gap-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setEditingUser(null)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    updateUser(editingUser);
-                    setEditingUser(null);
-                  }}
-                  className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs"
-                >
-                  Perbarui
-                </button>
-              </div>
+            <div className="flex justify-end gap-2 p-4 border-t border-slate-100 bg-slate-50 shrink-0">
+              <button
+                type="button"
+                onClick={() => setEditingUser(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  updateUser(editingUser);
+                  setEditingUser(null);
+                }}
+                className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs cursor-pointer"
+              >
+                Perbarui
+              </button>
             </div>
           </div>
         </div>
@@ -1953,6 +2040,8 @@ export const AdminDashboard: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
+                      const kamad = users.find((u) => u.role === 'kepala_madrasah');
+                      const examGuru = users.find((u) => u.id === selectedExamForParticipants.guruId);
                       exportGradesPdf({
                         exam: selectedExamForParticipants,
                         submissions: filteredSubs,
@@ -1962,7 +2051,9 @@ export const AdminDashboard: React.FC = () => {
                             ? selectedExamForParticipants.kelasTarget[0] || 'Semua Kelas'
                             : adminParticipantClassFilter,
                         guruName: selectedExamForParticipants.guruNama || 'Guru Pengampu',
-                        guruNip: undefined,
+                        guruNip: examGuru?.nip,
+                        kamadName: kamad?.name,
+                        kamadNip: kamad?.nip,
                       });
                     }}
                     disabled={filteredSubs.length === 0}

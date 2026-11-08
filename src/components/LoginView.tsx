@@ -19,6 +19,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   Users,
+  Award,
 } from 'lucide-react';
 import {
   buildLoginUrl,
@@ -29,12 +30,13 @@ export const LoginView: React.FC = () => {
   const { login, users, isCloudSynced } = useLMS();
 
   // Role can be determined by ?role= query parameter
-  const [activePortal, setActivePortal] = useState<'admin' | 'guru' | 'siswa' | 'select'>(() => {
+  const [activePortal, setActivePortal] = useState<'admin' | 'guru' | 'siswa' | 'kepala_madrasah' | 'select'>(() => {
     const params = new URLSearchParams(window.location.search);
     const roleParam = params.get('role')?.toLowerCase();
     if (roleParam === 'guru') return 'guru';
     if (roleParam === 'siswa') return 'siswa';
     if (roleParam === 'admin') return 'admin';
+    if (roleParam === 'kepala_madrasah' || roleParam === 'kamad') return 'kepala_madrasah';
     return 'select'; // If no role in URL, show portal selection
   });
 
@@ -55,7 +57,7 @@ export const LoginView: React.FC = () => {
 
     if (roleParam === 'guru') {
       setActivePortal('guru');
-      setUsername('guru_siti');
+      setUsername('guru_fauzan');
       setPassword('guru123');
     } else if (roleParam === 'siswa') {
       setActivePortal('siswa');
@@ -65,6 +67,10 @@ export const LoginView: React.FC = () => {
       setActivePortal('admin');
       setUsername('darma313adi');
       setPassword('masdar313');
+    } else if (roleParam === 'kepala_madrasah' || roleParam === 'kamad') {
+      setActivePortal('kepala_madrasah');
+      setUsername('kamad_ahmad');
+      setPassword('kamad123');
     }
 
     if (userParam) {
@@ -84,14 +90,17 @@ export const LoginView: React.FC = () => {
     }
   }, [users]);
 
-  const selectPortal = (role: 'admin' | 'guru' | 'siswa') => {
+  const selectPortal = (role: 'admin' | 'guru' | 'siswa' | 'kepala_madrasah') => {
     setActivePortal(role);
     setErrorMsg('');
     if (role === 'admin') {
       setUsername('darma313adi');
       setPassword('masdar313');
+    } else if (role === 'kepala_madrasah') {
+      setUsername('kamad_ahmad');
+      setPassword('kamad123');
     } else if (role === 'guru') {
-      setUsername('guru_siti');
+      setUsername('guru_fauzan');
       setPassword('guru123');
     } else {
       setUsername('siswa_budi');
@@ -179,21 +188,21 @@ export const LoginView: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
               {/* Portal Siswa */}
               <button
                 type="button"
                 onClick={() => selectPortal('siswa')}
-                className="group p-5 rounded-2xl bg-gradient-to-b from-emerald-50 to-emerald-100/40 border-2 border-emerald-300 hover:border-emerald-500 hover:shadow-lg transition flex flex-col items-center text-center cursor-pointer"
+                className="group p-4 rounded-2xl bg-gradient-to-b from-emerald-50 to-emerald-100/40 border-2 border-emerald-300 hover:border-emerald-500 hover:shadow-lg transition flex flex-col items-center text-center cursor-pointer"
               >
-                <div className="w-14 h-14 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition mb-3">
-                  <GraduationCap className="w-7 h-7" />
+                <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition mb-2.5">
+                  <GraduationCap className="w-6 h-6" />
                 </div>
-                <h4 className="font-extrabold text-slate-900 text-base">Portal Siswa</h4>
-                <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-                  Akses materi ajar PDF, jadwal KBM, dan ujian CBT komputer berbasis online.
+                <h4 className="font-extrabold text-slate-900 text-sm">Portal Siswa</h4>
+                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                  Akses materi ajar PDF & asesmen CBT anti-curang online.
                 </p>
-                <span className="mt-4 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold shadow-xs group-hover:bg-emerald-700 transition">
+                <span className="mt-3 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-bold shadow-xs group-hover:bg-emerald-700 transition">
                   Masuk Siswa →
                 </span>
               </button>
@@ -202,17 +211,35 @@ export const LoginView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => selectPortal('guru')}
-                className="group p-5 rounded-2xl bg-gradient-to-b from-blue-50 to-blue-100/40 border-2 border-blue-300 hover:border-blue-500 hover:shadow-lg transition flex flex-col items-center text-center cursor-pointer"
+                className="group p-4 rounded-2xl bg-gradient-to-b from-blue-50 to-blue-100/40 border-2 border-blue-300 hover:border-blue-500 hover:shadow-lg transition flex flex-col items-center text-center cursor-pointer"
               >
-                <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition mb-3">
-                  <BookOpen className="w-7 h-7" />
+                <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition mb-2.5">
+                  <BookOpen className="w-6 h-6" />
                 </div>
-                <h4 className="font-extrabold text-slate-900 text-base">Portal Guru</h4>
-                <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-                  Kelola materi PDF, buat soal via AI, koreksi ujian, & cetak laporan nilai PDF.
+                <h4 className="font-extrabold text-slate-900 text-sm">Portal Guru</h4>
+                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                  Kelola materi PDF, buat ujian AI, unduh hasil Excel & PDF.
                 </p>
-                <span className="mt-4 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-xs group-hover:bg-blue-700 transition">
+                <span className="mt-3 px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[11px] font-bold shadow-xs group-hover:bg-blue-700 transition">
                   Masuk Guru →
+                </span>
+              </button>
+
+              {/* Portal Kepala Madrasah */}
+              <button
+                type="button"
+                onClick={() => selectPortal('kepala_madrasah')}
+                className="group p-4 rounded-2xl bg-gradient-to-b from-purple-50 to-purple-100/40 border-2 border-purple-300 hover:border-purple-500 hover:shadow-lg transition flex flex-col items-center text-center cursor-pointer"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-purple-700 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition mb-2.5">
+                  <Award className="w-6 h-6" />
+                </div>
+                <h4 className="font-extrabold text-slate-900 text-sm">Kepala Madrasah</h4>
+                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                  Supervisi ujian, monitoring nilai, dan rekap kurikulum via NIP.
+                </p>
+                <span className="mt-3 px-2.5 py-1 rounded-lg bg-purple-700 text-white text-[11px] font-bold shadow-xs group-hover:bg-purple-800 transition">
+                  Masuk Kamad →
                 </span>
               </button>
 
@@ -220,16 +247,16 @@ export const LoginView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => selectPortal('admin')}
-                className="group p-5 rounded-2xl bg-gradient-to-b from-rose-50 to-rose-100/40 border-2 border-rose-300 hover:border-rose-500 hover:shadow-lg transition flex flex-col items-center text-center cursor-pointer"
+                className="group p-4 rounded-2xl bg-gradient-to-b from-rose-50 to-rose-100/40 border-2 border-rose-300 hover:border-rose-500 hover:shadow-lg transition flex flex-col items-center text-center cursor-pointer"
               >
-                <div className="w-14 h-14 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition mb-3">
-                  <Shield className="w-7 h-7" />
+                <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition mb-2.5">
+                  <Shield className="w-6 h-6" />
                 </div>
-                <h4 className="font-extrabold text-slate-900 text-base">Portal Admin</h4>
-                <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-                  Kelola akun pengguna, rombongan belajar kelas, dan plotting guru mapel.
+                <h4 className="font-extrabold text-slate-900 text-sm">Portal Admin</h4>
+                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                  Kelola seluruh akun, rombel kelas, dan plotting pengampu.
                 </p>
-                <span className="mt-4 px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold shadow-xs group-hover:bg-rose-700 transition">
+                <span className="mt-3 px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold shadow-xs group-hover:bg-rose-700 transition">
                   Masuk Admin →
                 </span>
               </button>
@@ -249,22 +276,27 @@ export const LoginView: React.FC = () => {
                       ? 'bg-emerald-600 shadow-emerald-500/30'
                       : activePortal === 'guru'
                       ? 'bg-blue-600 shadow-blue-500/30'
+                      : activePortal === 'kepala_madrasah'
+                      ? 'bg-purple-700 shadow-purple-500/30'
                       : 'bg-rose-600 shadow-rose-500/30'
                   }`}
                 >
                   {activePortal === 'siswa' && <GraduationCap className="w-6 h-6" />}
                   {activePortal === 'guru' && <BookOpen className="w-6 h-6" />}
+                  {activePortal === 'kepala_madrasah' && <Award className="w-6 h-6" />}
                   {activePortal === 'admin' && <Shield className="w-6 h-6" />}
                 </div>
                 <div>
                   <h3 className="text-lg font-black text-slate-900">
                     {activePortal === 'siswa' && 'Portal Masuk Siswa'}
                     {activePortal === 'guru' && 'Portal Masuk Guru & Pengajar'}
+                    {activePortal === 'kepala_madrasah' && 'Portal Masuk Kepala Madrasah'}
                     {activePortal === 'admin' && 'Portal Masuk Administrator'}
                   </h3>
                   <p className="text-xs text-slate-500">
                     {activePortal === 'siswa' && 'Khusus peserta didik MAN 11 Jakarta'}
                     {activePortal === 'guru' && 'Khusus dewan guru & tenaga pendidik'}
+                    {activePortal === 'kepala_madrasah' && 'Khusus pimpinan & pengawas madrasah'}
                     {activePortal === 'admin' && 'Khusus pengelola sistem & admin'}
                   </p>
                 </div>
@@ -297,6 +329,8 @@ export const LoginView: React.FC = () => {
                     ? 'Username / NISN Siswa'
                     : activePortal === 'guru'
                     ? 'Username / NIP Guru'
+                    : activePortal === 'kepala_madrasah'
+                    ? 'Username / NIP Kepala Madrasah'
                     : 'Username Administrator'}
                 </label>
                 <div className="mt-1 relative rounded-lg shadow-2xs">
@@ -311,7 +345,9 @@ export const LoginView: React.FC = () => {
                       activePortal === 'siswa'
                         ? 'Contoh: siswa_budi atau NISN'
                         : activePortal === 'guru'
-                        ? 'Contoh: guru_siti atau NIP'
+                        ? 'Contoh: guru_fauzan atau NIP'
+                        : activePortal === 'kepala_madrasah'
+                        ? 'Contoh: kamad_ahmad atau NIP'
                         : 'Contoh: darma313adi'
                     }
                     className="block w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"

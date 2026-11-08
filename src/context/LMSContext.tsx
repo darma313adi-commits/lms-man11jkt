@@ -103,9 +103,28 @@ const STORAGE_KEY_MAPEL = 'educbt_mapel_v1';
 const STORAGE_KEY_KELAS_MAPEL = 'educbt_kelas_mapel_v1';
 
 /**
- * Deleted classes per user instruction (X 1, X 2, XI 1)
+ * Deleted classes per user instruction (X 1, X 2, XI 1, XI 2, XI 3, XI 4)
  */
-export const DELETED_CLASSES = ['X 1', 'X 2', 'XI 1'];
+export const DELETED_CLASSES = ['X 1', 'X 2', 'XI 1', 'XI 2', 'XI 3', 'XI 4'];
+
+/**
+ * Deleted teachers per user instruction (Dra. Siti Aminah, M.Pd & Bambang Prakoso, S.Pd)
+ */
+export const DELETED_TEACHER_USERNAMES = ['guru_siti', 'guru_bambang'];
+export const DELETED_TEACHER_IDS = ['user_guru_siti', 'user_guru_bambang'];
+
+export function isDeletedTeacher(u?: Partial<User> | null): boolean {
+  if (!u) return false;
+  const uname = (u.username || '').toLowerCase();
+  const uid = (u.id || '').toLowerCase();
+  const name = (u.name || '').toLowerCase();
+  return (
+    DELETED_TEACHER_USERNAMES.includes(uname) ||
+    DELETED_TEACHER_IDS.includes(uid) ||
+    name.includes('siti aminah') ||
+    name.includes('bambang prakoso')
+  );
+}
 
 /**
  * Helper to remove legacy MIPA, MIA, IPS from class names into clean Kurikulum Merdeka numbering
@@ -113,8 +132,8 @@ export const DELETED_CLASSES = ['X 1', 'X 2', 'XI 1'];
 export function sanitizeClassName(rawName?: string): string {
   if (!rawName) return '';
   return rawName
-    .replace(/XI\s+IPS\s+1/gi, 'XI 3')
-    .replace(/XI\s+IPS\s+2/gi, 'XI 4')
+    .replace(/XI\s+IPS\s+1/gi, 'XII 1')
+    .replace(/XI\s+IPS\s+2/gi, 'XII 1')
     .replace(/XII\s+IPS\s+1/gi, 'XII 2')
     .replace(/XII\s+IPS\s+2/gi, 'XII 3')
     .replace(/\b(MIPA|MIA|IPA|IPS)\s*/gi, '')
@@ -147,20 +166,22 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       const saved = localStorage.getItem(STORAGE_KEY_USERS);
       const parsed: User[] = saved ? JSON.parse(saved) : INITIAL_USERS;
-      return parsed.map((u) => {
-        let cleanK = u.kelas ? sanitizeClassName(u.kelas) : undefined;
-        if (cleanK && DELETED_CLASSES.includes(cleanK)) {
-          cleanK = 'XI 2';
-        }
-        let cleanKA = u.kelasAjar
-          ?.map(sanitizeClassName)
-          .filter((k) => !DELETED_CLASSES.includes(k));
-        return {
-          ...u,
-          kelas: cleanK,
-          kelasAjar: cleanKA,
-        };
-      });
+      return parsed
+        .filter((u) => !isDeletedTeacher(u))
+        .map((u) => {
+          let cleanK = u.kelas ? sanitizeClassName(u.kelas) : undefined;
+          if (cleanK && DELETED_CLASSES.includes(cleanK)) {
+            cleanK = 'XII 1';
+          }
+          let cleanKA = u.kelasAjar
+            ?.map(sanitizeClassName)
+            .filter((k) => !DELETED_CLASSES.includes(k));
+          return {
+            ...u,
+            kelas: cleanK,
+            kelasAjar: cleanKA,
+          };
+        });
     } catch {
       return INITIAL_USERS;
     }
@@ -174,7 +195,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         let cleanKT = (e.kelasTarget || [])
           .map(sanitizeClassName)
           .filter((k) => !DELETED_CLASSES.includes(k));
-        if (cleanKT.length === 0) cleanKT = ['XI 2'];
+        if (cleanKT.length === 0) cleanKT = ['XII 1', 'XII 2'];
         return {
           ...e,
           kelasTarget: cleanKT,
@@ -192,7 +213,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return parsed.map((s) => {
         let cleanSK = sanitizeClassName(s.siswaKelas);
         if (DELETED_CLASSES.includes(cleanSK)) {
-          cleanSK = 'XI 2';
+          cleanSK = 'XII 1';
         }
         return {
           ...s,
@@ -212,7 +233,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         let cleanKT = (m.kelasTarget || [])
           .map(sanitizeClassName)
           .filter((k) => !DELETED_CLASSES.includes(k));
-        if (cleanKT.length === 0) cleanKT = ['XI 2'];
+        if (cleanKT.length === 0) cleanKT = ['XII 1', 'XII 2'];
         return {
           ...m,
           kelasTarget: cleanKT,
@@ -266,7 +287,14 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_CURRENT_USER);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (isDeletedTeacher(parsed)) {
+          localStorage.removeItem(STORAGE_KEY_CURRENT_USER);
+          return null;
+        }
+        return parsed;
+      }
       return null;
     } catch {
       return null;
@@ -361,7 +389,16 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (snapshot.empty) {
           seedCloudIfEmpty();
         } else {
-          const rawLoaded = snapshot.docs.map((d) => d.data() as User);
+          // Permanently delete targeted deleted teachers from Firestore
+          for (const d of snapshot.docs) {
+            const uData = d.data() as User;
+            if (isDeletedTeacher(uData)) {
+              deleteDoc(doc(db, 'users', d.id)).catch(() => {});
+            }
+          }
+          const rawLoaded = snapshot.docs
+            .map((d) => d.data() as User)
+            .filter((u) => !isDeletedTeacher(u));
           // Preserve darma313adi guarantee
           if (!rawLoaded.some((u) => u.username === 'darma313adi')) {
             const admin = INITIAL_USERS[0];
@@ -371,7 +408,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const loaded = rawLoaded.map((u) => {
             let cleanK = u.kelas ? sanitizeClassName(u.kelas) : undefined;
             if (cleanK && DELETED_CLASSES.includes(cleanK)) {
-              cleanK = 'XI 2';
+              cleanK = 'XII 1';
             }
             let cleanKA = u.kelasAjar
               ?.map(sanitizeClassName)
@@ -387,10 +424,15 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             return { ...u, kelas: cleanK, kelasAjar: cleanKA };
           });
           setUsers(loaded);
-          // Update currentUser if matched
+          // Update currentUser if matched or logout if deleted
           if (currentUser) {
-            const updatedSelf = loaded.find((u) => u.id === currentUser.id);
-            if (updatedSelf) setCurrentUser(updatedSelf);
+            if (isDeletedTeacher(currentUser)) {
+              setCurrentUser(null);
+              localStorage.removeItem(STORAGE_KEY_CURRENT_USER);
+            } else {
+              const updatedSelf = loaded.find((u) => u.id === currentUser.id);
+              if (updatedSelf) setCurrentUser(updatedSelf);
+            }
           }
         }
       },
@@ -475,7 +517,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             let cleanKT = (e.kelasTarget || [])
               .map(sanitizeClassName)
               .filter((k) => !DELETED_CLASSES.includes(k));
-            if (cleanKT.length === 0) cleanKT = ['XI 2'];
+            if (cleanKT.length === 0) cleanKT = ['XII 1', 'XII 2'];
             if (JSON.stringify(e.kelasTarget) !== JSON.stringify(cleanKT)) {
               const updatedE = { ...e, kelasTarget: cleanKT };
               setDoc(doc(db, 'exams', e.id), cleanForFirestore(updatedE)).catch(() => {});
@@ -499,7 +541,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             let cleanKT = (m.kelasTarget || [])
               .map(sanitizeClassName)
               .filter((k) => !DELETED_CLASSES.includes(k));
-            if (cleanKT.length === 0) cleanKT = ['XI 2'];
+            if (cleanKT.length === 0) cleanKT = ['XII 1', 'XII 2'];
             if (JSON.stringify(m.kelasTarget) !== JSON.stringify(cleanKT)) {
               const updatedM = { ...m, kelasTarget: cleanKT };
               setDoc(doc(db, 'materials', m.id), cleanForFirestore(updatedM)).catch(() => {});
@@ -522,7 +564,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const loadedSubs = rawSubs.map((s) => {
             let cleanSK = sanitizeClassName(s.siswaKelas);
             if (DELETED_CLASSES.includes(cleanSK)) {
-              cleanSK = 'XI 2';
+              cleanSK = 'XII 1';
             }
             if (s.siswaKelas !== cleanSK) {
               const updatedS = { ...s, siswaKelas: cleanSK };
@@ -1177,7 +1219,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       mataPelajaran: exam.mataPelajaran,
       siswaId: siswa.id,
       siswaNama: siswa.name,
-      siswaKelas: siswa.kelas || 'XI 2',
+      siswaKelas: siswa.kelas || 'XII 1',
       siswaNisn: siswa.nisn || siswa.username,
       waktuMulai: new Date().toISOString(),
       sisaWaktuDetik: exam.durasiMenit * 60,

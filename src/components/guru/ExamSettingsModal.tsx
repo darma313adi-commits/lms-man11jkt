@@ -29,9 +29,6 @@ interface ExamSettingsModalProps {
 export const ALL_CLASSES_LIST = [
   'X 3',
   'X 4',
-  'XI 2',
-  'XI 3',
-  'XI 4',
   'XII 1',
   'XII 2',
   'XII 3',
@@ -56,8 +53,8 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
   const [status, setStatus] = useState<'draft' | 'aktif' | 'selesai'>(exam.status || 'aktif');
   const [selectedClasses, setSelectedClasses] = useState<string[]>(() => {
     return exam.kelasTarget && exam.kelasTarget.length > 0
-      ? exam.kelasTarget.filter((k) => !['X 1', 'X 2', 'XI 1'].includes(k))
-      : ['XI 2', 'XI 3'];
+      ? exam.kelasTarget.filter((k) => !['X 1', 'X 2', 'XI 1', 'XI 2', 'XI 3', 'XI 4'].includes(k))
+      : ['XII 1', 'XII 2'];
   });
   const [waktuMulai, setWaktuMulai] = useState<string>(exam.waktuMulai || '');
   const [waktuKadaluarsa, setWaktuKadaluarsa] = useState<string>(exam.waktuKadaluarsa || '');
@@ -126,7 +123,7 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
   const toggleClass = (kelasName: string) => {
     if (kelasName === 'Semua Kelas') {
       if (selectedClasses.includes('Semua Kelas')) {
-        setSelectedClasses(['XI 2', 'XI 3']);
+        setSelectedClasses(['XII 1', 'XII 2']);
       } else {
         setSelectedClasses(['Semua Kelas']);
       }

@@ -39,6 +39,7 @@ import {
   List,
   LayoutGrid,
   RotateCcw,
+  X,
 } from 'lucide-react';
 import {
   downloadQuestionTemplateExcel,
@@ -102,7 +103,7 @@ export const GuruDashboard: React.FC = () => {
   const [selectedExamForSettings, setSelectedExamForSettings] = useState<Exam | null>(null);
   const [showQuestionEditorModal, setShowQuestionEditorModal] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<QuestionItem | null>(null);
-  const [newExamClasses, setNewExamClasses] = useState<string[]>(['XI 2', 'XI 3']);
+  const [newExamClasses, setNewExamClasses] = useState<string[]>(['XII 1', 'XII 2']);
 
   // Modals for Viewing Exam and Material
   const [selectedExamForView, setSelectedExamForView] = useState<Exam | null>(null);
@@ -135,7 +136,7 @@ export const GuruDashboard: React.FC = () => {
     judul: '',
     deskripsi: '',
     mataPelajaran: currentUser?.mataPelajaran || 'Biologi',
-    kelasTarget: 'XI 2, XI 3',
+    kelasTarget: 'XII 1, XII 2',
     durasiMenit: 60,
     kkm: 75,
     status: 'aktif' as 'draft' | 'aktif',
@@ -152,7 +153,7 @@ export const GuruDashboard: React.FC = () => {
     judul: '',
     deskripsi: '',
     mataPelajaran: currentUser?.mataPelajaran || 'Biologi',
-    kelasTarget: 'XI 2, XI 3',
+    kelasTarget: 'XII 1, XII 2',
     fileName: '',
     fileSize: '',
   });
@@ -206,7 +207,7 @@ export const GuruDashboard: React.FC = () => {
     const studentClasses = Array.from(
       new Set(users.filter((u) => u.role === 'siswa' && u.kelas).map((u) => u.kelas!.trim()))
     );
-    return studentClasses.length > 0 ? studentClasses : ['XI 2', 'XI 3', 'XII 1'];
+    return studentClasses.length > 0 ? studentClasses : ['XII 1', 'XII 2'];
   }, [currentUser, exams, materials, users]);
 
   // Check if current teacher is a homeroom teacher (wali kelas)
@@ -353,7 +354,7 @@ export const GuruDashboard: React.FC = () => {
   const handleCreateExamSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const tokenClean = newExamData.tokenUjian.trim().toUpperCase() || 'MAN11';
-    const targetClasses = newExamClasses.length > 0 ? newExamClasses : ['XI 2', 'XI 3'];
+    const targetClasses = newExamClasses.length > 0 ? newExamClasses : ['XII 1', 'XII 2'];
     const created = createExam({
       judul: newExamData.judul,
       deskripsi: newExamData.deskripsi,
@@ -435,7 +436,7 @@ export const GuruDashboard: React.FC = () => {
       judul: '',
       deskripsi: '',
       mataPelajaran: currentUser?.mataPelajaran || 'Biologi',
-      kelasTarget: 'XI 2, XI 3',
+      kelasTarget: 'XII 1, XII 2',
       fileName: '',
       fileSize: '',
     });
@@ -1040,6 +1041,7 @@ export const GuruDashboard: React.FC = () => {
                       const classStudents = users.filter(
                         (u) => u.role === 'siswa' && u.kelas?.trim().toLowerCase() === st.namaKelas.trim().toLowerCase()
                       );
+                      const kamad = users.find((u) => u.role === 'kepala_madrasah');
                       exportGradesPdf({
                         exam: activeExam,
                         submissions,
@@ -1047,6 +1049,8 @@ export const GuruDashboard: React.FC = () => {
                         kelasName: st.namaKelas,
                         guruName: currentUser?.name || 'Guru Pengampu',
                         guruNip: currentUser?.nip,
+                        kamadName: kamad?.name,
+                        kamadNip: kamad?.nip,
                       });
                     }}
                     className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
@@ -2278,7 +2282,7 @@ export const GuruDashboard: React.FC = () => {
                       required
                       value={materialForm.kelasTarget}
                       onChange={(e) => setMaterialForm({ ...materialForm, kelasTarget: e.target.value })}
-                      placeholder="XI 2, XI 3"
+                      placeholder="XII 1, XII 2"
                       className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                     />
                   </div>
@@ -2601,6 +2605,7 @@ export const GuruDashboard: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
+                      const kamad = users.find((u) => u.role === 'kepala_madrasah');
                       exportGradesPdf({
                         exam: activeExam,
                         submissions: displayedSubmissions,
@@ -2608,6 +2613,8 @@ export const GuruDashboard: React.FC = () => {
                         kelasName: koreksiKelasFilter === 'all' ? (activeExam.kelasTarget[0] || 'Semua Kelas') : koreksiKelasFilter,
                         guruName: currentUser?.name || 'Guru Pengampu',
                         guruNip: currentUser?.nip,
+                        kamadName: kamad?.name,
+                        kamadNip: kamad?.nip,
                       });
                     }}
                     disabled={displayedSubmissions.length === 0}
@@ -2954,229 +2961,246 @@ export const GuruDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Buat Ujian Baru */}
+      {/* Modal Buat Ujian Baru (Bisa discroll ke atas dan ke bawah secara smooth di semua perangkat) */}
       {showCreateExamModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 animate-in fade-in">
-            <h3 className="text-base font-bold text-slate-900 mb-1">Buat Ujian Baru</h3>
-            <p className="text-xs text-slate-500 mb-4">Lengkapi informasi asesmen atau ujian yang akan diselenggarakan.</p>
-
-            <form onSubmit={handleCreateExamSubmit} className="space-y-3.5">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 my-auto">
+            {/* Header Modal Pinned / Fixed di Atas */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/80">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Judul Ujian *</label>
-                <input
-                  type="text"
-                  required
-                  value={newExamData.judul}
-                  onChange={(e) => setNewExamData({ ...newExamData, judul: e.target.value })}
-                  placeholder="Contoh: Asesmen Sumatif Akhir Semester Biologi"
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl"
-                />
+                <h3 className="text-base font-bold text-slate-900">Buat Ujian Baru</h3>
+                <p className="text-xs text-slate-500">Lengkapi informasi asesmen atau ujian yang akan diselenggarakan.</p>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowCreateExamModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition cursor-pointer"
+                title="Tutup Modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Deskripsi Singkat</label>
-                <textarea
-                  rows={2}
-                  value={newExamData.deskripsi}
-                  onChange={(e) => setNewExamData({ ...newExamData, deskripsi: e.target.value })}
-                  placeholder="Petunjuk pengerjaan atau kisi-kisi asesmen..."
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Jenis Asesmen *</label>
-                <select
-                  value={newExamData.jenisAsesmen}
-                  onChange={(e) =>
-                    setNewExamData({
-                      ...newExamData,
-                      jenisAsesmen: e.target.value as 'sumatif_lingkup_materi' | 'sumatif_akhir_semester' | 'formatif',
-                    })
-                  }
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="sumatif_lingkup_materi">Asesmen Sumatif Lingkup Materi (ASLM)</option>
-                  <option value="sumatif_akhir_semester">Asesmen Sumatif Akhir Semester (ASAS / ASTS)</option>
-                  <option value="formatif">Asesmen Formatif / Latihan Harian</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+            {/* Form Scrollable: Bisa scroll naik dan turun tanpa batas */}
+            <form onSubmit={handleCreateExamSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="overflow-y-auto p-5 sm:p-6 space-y-4 flex-1 overscroll-contain">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Mata Pelajaran</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Judul Ujian *</label>
                   <input
                     type="text"
                     required
-                    value={newExamData.mataPelajaran}
-                    onChange={(e) => setNewExamData({ ...newExamData, mataPelajaran: e.target.value })}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl"
+                    value={newExamData.judul}
+                    onChange={(e) => setNewExamData({ ...newExamData, judul: e.target.value })}
+                    placeholder="Contoh: Asesmen Sumatif Akhir Semester Biologi"
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Kode Ujian</label>
-                  <input
-                    type="text"
-                    required
-                    value={newExamData.kodeUjian}
-                    onChange={(e) => setNewExamData({ ...newExamData, kodeUjian: e.target.value })}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl font-mono uppercase"
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Durasi (Menit)</label>
-                  <input
-                    type="number"
-                    min={5}
-                    max={240}
-                    value={newExamData.durasiMenit}
-                    onChange={(e) => setNewExamData({ ...newExamData, durasiMenit: Number(e.target.value) })}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl font-bold"
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Deskripsi Singkat</label>
+                  <textarea
+                    rows={2}
+                    value={newExamData.deskripsi}
+                    onChange={(e) => setNewExamData({ ...newExamData, deskripsi: e.target.value })}
+                    placeholder="Petunjuk pengerjaan atau kisi-kisi asesmen..."
+                    className="w-full text-xs p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Nilai KKM</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={newExamData.kkm}
-                    onChange={(e) => setNewExamData({ ...newExamData, kkm: Number(e.target.value) })}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="p-3 bg-indigo-50/50 border border-indigo-200/80 rounded-2xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-slate-800">
-                    Kelas Sasaran (Tinggal Pilih Rombel)
-                  </label>
-                  <span className="text-[11px] font-bold text-indigo-700">
-                    {newExamClasses.length} Kelas Dipilih
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {examClassChoices.map((cls) => {
-                    const isSelected = newExamClasses.includes(cls);
-                    return (
-                      <button
-                        key={cls}
-                        type="button"
-                        onClick={() => {
-                          if (cls === 'Semua Kelas') {
-                            setNewExamClasses(newExamClasses.includes('Semua Kelas') ? ['XI 2'] : ['Semua Kelas']);
-                            return;
-                          }
-                          let next = newExamClasses.filter((c) => c !== 'Semua Kelas');
-                          if (next.includes(cls)) {
-                            next = next.filter((c) => c !== cls);
-                          } else {
-                            next = [...next, cls];
-                          }
-                          if (next.length === 0) next = [cls];
-                          setNewExamClasses(next);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                          isSelected
-                            ? 'bg-indigo-600 text-white shadow-xs'
-                            : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
-                        }`}
-                      >
-                        {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                        <span>{cls}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Status & Token Setting */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-800 block">Status Aktivasi Ujian</span>
-                    <span className="text-[11px] text-slate-500">Siswa hanya dapat mengakses jika status Aktif</span>
-                  </div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Jenis Asesmen *</label>
                   <select
-                    value={newExamData.status}
-                    onChange={(e) => setNewExamData({ ...newExamData, status: e.target.value as 'aktif' | 'draft' })}
-                    className="text-xs font-bold px-3 py-1.5 border border-slate-300 rounded-lg bg-white"
+                    value={newExamData.jenisAsesmen}
+                    onChange={(e) =>
+                      setNewExamData({
+                        ...newExamData,
+                        jenisAsesmen: e.target.value as 'sumatif_lingkup_materi' | 'sumatif_akhir_semester' | 'formatif',
+                      })
+                    }
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium focus:ring-2 focus:ring-indigo-500"
                   >
-                    <option value="aktif">🟢 Aktif (Bisa Diakses)</option>
-                    <option value="draft">🔴 Nonaktif (Draft / Tertutup)</option>
+                    <option value="sumatif_lingkup_materi">Asesmen Sumatif Lingkup Materi (ASLM)</option>
+                    <option value="sumatif_akhir_semester">Asesmen Sumatif Akhir Semester (ASAS / ASTS)</option>
+                    <option value="formatif">Asesmen Formatif / Latihan Harian</option>
                   </select>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Waktu Mulai Aktif</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Mata Pelajaran</label>
                     <input
-                      type="datetime-local"
-                      value={newExamData.waktuMulai}
-                      onChange={(e) => setNewExamData({ ...newExamData, waktuMulai: e.target.value })}
-                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white"
+                      type="text"
+                      required
+                      value={newExamData.mataPelajaran}
+                      onChange={(e) => setNewExamData({ ...newExamData, mataPelajaran: e.target.value })}
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Waktu Kadaluarsa / Berakhir</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Kode Ujian</label>
                     <input
-                      type="datetime-local"
-                      value={newExamData.waktuKadaluarsa}
-                      onChange={(e) => setNewExamData({ ...newExamData, waktuKadaluarsa: e.target.value })}
-                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white"
+                      type="text"
+                      required
+                      value={newExamData.kodeUjian}
+                      onChange={(e) => setNewExamData({ ...newExamData, kodeUjian: e.target.value })}
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl font-mono uppercase focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-slate-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800">
-                      <input
-                        type="checkbox"
-                        checked={newExamData.useToken}
-                        onChange={(e) => setNewExamData({ ...newExamData, useToken: e.target.checked })}
-                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span>Wajib Masukkan Token untuk Mengerjakan</span>
-                    </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Durasi (Menit)</label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={240}
+                      value={newExamData.durasiMenit}
+                      onChange={(e) => setNewExamData({ ...newExamData, durasiMenit: Number(e.target.value) })}
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500"
+                    />
                   </div>
-                  {newExamData.useToken && (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={newExamData.tokenUjian}
-                        onChange={(e) => setNewExamData({ ...newExamData, tokenUjian: e.target.value.toUpperCase() })}
-                        placeholder="Contoh: BIO2025"
-                        className="flex-1 text-xs px-3 py-1.5 border border-slate-300 rounded-lg bg-white font-mono font-bold tracking-wider uppercase"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setNewExamData({ ...newExamData, tokenUjian: `TK${Math.floor(1000 + Math.random() * 9000)}` })}
-                        className="px-3 py-1.5 text-[11px] font-bold bg-slate-200 hover:bg-slate-300 rounded-lg text-slate-700"
-                      >
-                        Acak
-                      </button>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Nilai KKM</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={newExamData.kkm}
+                      onChange={(e) => setNewExamData({ ...newExamData, kkm: Number(e.target.value) })}
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 bg-indigo-50/50 border border-indigo-200/80 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800">
+                      Kelas Sasaran (Tinggal Pilih Rombel)
+                    </label>
+                    <span className="text-[11px] font-bold text-indigo-700">
+                      {newExamClasses.length} Kelas Dipilih
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {examClassChoices.map((cls) => {
+                      const isSelected = newExamClasses.includes(cls);
+                      return (
+                        <button
+                          key={cls}
+                          type="button"
+                          onClick={() => {
+                            if (cls === 'Semua Kelas') {
+                              setNewExamClasses(newExamClasses.includes('Semua Kelas') ? ['XII 1'] : ['Semua Kelas']);
+                              return;
+                            }
+                            let next = newExamClasses.filter((c) => c !== 'Semua Kelas');
+                            if (next.includes(cls)) {
+                              next = next.filter((c) => c !== cls);
+                            } else {
+                              next = [...next, cls];
+                            }
+                            if (next.length === 0) next = [cls];
+                            setNewExamClasses(next);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white shadow-xs'
+                              : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          <span>{cls}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Status & Token Setting */}
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block">Status Aktivasi Ujian</span>
+                      <span className="text-[11px] text-slate-500">Siswa hanya dapat mengakses jika status Aktif</span>
                     </div>
-                  )}
+                    <select
+                      value={newExamData.status}
+                      onChange={(e) => setNewExamData({ ...newExamData, status: e.target.value as 'aktif' | 'draft' })}
+                      className="text-xs font-bold px-3 py-1.5 border border-slate-300 rounded-lg bg-white"
+                    >
+                      <option value="aktif">🟢 Aktif (Bisa Diakses)</option>
+                      <option value="draft">🔴 Nonaktif (Draft / Tertutup)</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Waktu Mulai Aktif</label>
+                      <input
+                        type="datetime-local"
+                        value={newExamData.waktuMulai}
+                        onChange={(e) => setNewExamData({ ...newExamData, waktuMulai: e.target.value })}
+                        className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Waktu Kadaluarsa / Berakhir</label>
+                      <input
+                        type="datetime-local"
+                        value={newExamData.waktuKadaluarsa}
+                        onChange={(e) => setNewExamData({ ...newExamData, waktuKadaluarsa: e.target.value })}
+                        className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800">
+                        <input
+                          type="checkbox"
+                          checked={newExamData.useToken}
+                          onChange={(e) => setNewExamData({ ...newExamData, useToken: e.target.checked })}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>Wajib Masukkan Token untuk Mengerjakan</span>
+                      </label>
+                    </div>
+                    {newExamData.useToken && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={newExamData.tokenUjian}
+                          onChange={(e) => setNewExamData({ ...newExamData, tokenUjian: e.target.value.toUpperCase() })}
+                          placeholder="Contoh: BIO2025"
+                          className="flex-1 text-xs px-3 py-1.5 border border-slate-300 rounded-lg bg-white font-mono font-bold tracking-wider uppercase"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setNewExamData({ ...newExamData, tokenUjian: `TK${Math.floor(1000 + Math.random() * 9000)}` })}
+                          className="px-3 py-1.5 text-[11px] font-bold bg-slate-200 hover:bg-slate-300 rounded-lg text-slate-700"
+                        >
+                          Acak
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-3 flex justify-end gap-2">
+              {/* Footer Modal Pinned / Fixed di Bawah */}
+              <div className="px-5 py-3.5 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowCreateExamModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200/70 rounded-xl transition cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs"
+                  className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition cursor-pointer"
                 >
                   Simpan & Buat Soal
                 </button>

@@ -1,8 +1,8 @@
-export type UserRole = 'admin' | 'guru' | 'siswa';
+export type UserRole = 'admin' | 'guru' | 'siswa' | 'kepala_madrasah';
 
 export interface RombelKelas {
   id: string;
-  nama: string; // e.g. 'X 1', 'XI 2'
+  nama: string; // e.g. 'X 3', 'XII 1', 'XII 2'
   tingkat: 'X' | 'XI' | 'XII' | string;
   jurusan: 'Umum' | 'Peminatan' | 'Keagamaan' | 'Bahasa' | string;
   waliKelasId?: string;
@@ -25,7 +25,7 @@ export interface MataPelajaran {
 
 export interface KelasMapelPengampu {
   id: string;
-  kelasNama: string; // e.g. 'X 1', 'XI 2'
+  kelasNama: string; // e.g. 'X 3', 'XII 1', 'XII 2'
   mapelId: string;
   mapelNama: string;
   mapelKode?: string;
@@ -43,7 +43,7 @@ export interface User {
   name: string;
   email?: string;
   role: UserRole;
-  kelas?: string; // Khusus siswa e.g., 'X 1', 'XI 2'
+  kelas?: string; // Khusus siswa e.g., 'X 3', 'XII 1', 'XII 2'
   nip?: string;
   nisn?: string;
   mataPelajaran?: string; // Khusus guru

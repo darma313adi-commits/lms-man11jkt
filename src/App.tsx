@@ -25,7 +25,7 @@ const MainLayout: React.FC = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900 font-sans">
       <Navbar />
       <main className="flex-1 pb-16">
-        {currentUser.role === 'admin' && <AdminDashboard />}
+        {(currentUser.role === 'admin' || currentUser.role === 'kepala_madrasah') && <AdminDashboard />}
         {currentUser.role === 'guru' && <GuruDashboard />}
         {currentUser.role === 'siswa' && <SiswaDashboard />}
       </main>

@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Sparkles,
   Lock,
+  Award,
 } from 'lucide-react';
 import { ChangePasswordModal } from './guru/ChangePasswordModal';
 
@@ -25,6 +26,7 @@ export const Navbar: React.FC = () => {
 
   const roleBadgeConfig = {
     admin: { label: 'Administrator', bg: 'bg-rose-100 text-rose-800 border-rose-200', icon: Shield },
+    kepala_madrasah: { label: 'Kepala Madrasah', bg: 'bg-purple-100 text-purple-900 border-purple-200', icon: Award },
     guru: { label: 'Guru / Pendidik', bg: 'bg-blue-100 text-blue-800 border-blue-200', icon: BookOpen },
     siswa: { label: 'Siswa', bg: 'bg-emerald-100 text-emerald-800 border-emerald-200', icon: GraduationCap },
   };
@@ -107,6 +109,11 @@ export const Navbar: React.FC = () => {
                             Admin
                           </span>
                         )}
+                        {u.role === 'kepala_madrasah' && (
+                          <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-bold">
+                            Kamad
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -136,7 +143,7 @@ export const Navbar: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  @{currentUser.username} {currentUser.kelas ? `• Kelas ${currentUser.kelas}` : ''}
+                  @{currentUser.username} {currentUser.nip ? `• NIP: ${currentUser.nip}` : currentUser.kelas ? `• Kelas ${currentUser.kelas}` : ''}
                 </p>
               </div>
               <ChevronDown className="w-4 h-4 text-slate-400" />
@@ -147,9 +154,12 @@ export const Navbar: React.FC = () => {
                 <div className="px-4 py-2 border-b border-slate-100">
                   <p className="text-xs font-bold text-slate-900">{currentUser.name}</p>
                   <p className="text-[11px] text-slate-500 truncate">{currentUser.email || currentUser.username}</p>
+                  {currentUser.nip && (
+                    <p className="text-[11px] text-indigo-700 font-mono font-bold mt-0.5">NIP: {currentUser.nip}</p>
+                  )}
                   <div className="mt-1 flex items-center gap-1.5">
                     <BadgeIcon className="w-3.5 h-3.5 text-indigo-600" />
-                    <span className="text-[11px] font-semibold text-slate-700 capitalize">{currentUser.role}</span>
+                    <span className="text-[11px] font-semibold text-slate-700">{badge.label}</span>
                     {currentUser.kelas && (
                       <span className="text-[11px] text-slate-500">({currentUser.kelas})</span>
                     )}
