@@ -327,8 +327,8 @@ export const LoginView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Tombol Ganti Portal (Dihilangkan untuk Siswa) */}
-              {activePortal !== 'siswa' && (
+              {/* Tombol Ganti Portal (Hanya untuk Admin, dihilangkan untuk Siswa, Guru, dan Kepala Madrasah) */}
+              {activePortal === 'admin' && (
                 <button
                   type="button"
                   onClick={backToPortalSelect}
