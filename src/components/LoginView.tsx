@@ -74,8 +74,8 @@ export const LoginView: React.FC = () => {
       setPassword('masdar313');
     } else if (roleParam === 'kepala_madrasah' || roleParam === 'kamad') {
       setActivePortal('kepala_madrasah');
-      setUsername('kamad_ahmad');
-      setPassword('kamad123');
+      setUsername('');
+      setPassword('');
     }
 
     if (userParam) {
@@ -122,8 +122,8 @@ export const LoginView: React.FC = () => {
       setUsername('darma313adi');
       setPassword('masdar313');
     } else if (role === 'kepala_madrasah') {
-      setUsername('kamad_ahmad');
-      setPassword('kamad123');
+      setUsername('');
+      setPassword('');
     } else if (role === 'guru') {
       setUsername('');
       setPassword('');
@@ -430,8 +430,8 @@ export const LoginView: React.FC = () => {
               </button>
             </form>
 
-            {/* Quick Demo Credentials Helper (Dihilangkan untuk Portal Siswa & Portal Guru) */}
-            {activePortal !== 'siswa' && activePortal !== 'guru' && (
+            {/* Quick Demo Credentials Helper (Khusus untuk Portal Admin saja) */}
+            {activePortal === 'admin' && (
               <div className="mt-5 pt-4 border-t border-slate-200">
                 <button
                   type="button"
@@ -440,7 +440,7 @@ export const LoginView: React.FC = () => {
                 >
                   <span className="flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Daftar Akun Pengujian Demo {activePortal === 'kepala_madrasah' ? 'Kepala Madrasah' : 'Admin'}</span>
+                    <span>Daftar Akun Pengujian Demo Admin</span>
                   </span>
                   {showQuickAccounts ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 </button>
