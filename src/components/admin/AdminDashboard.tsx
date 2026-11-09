@@ -120,7 +120,7 @@ export const AdminDashboard: React.FC = () => {
     username: '',
     password: '',
     role: 'siswa' as UserRole,
-    kelas: 'XII 1',
+    kelas: 'XII 3',
     nipNisn: '',
     email: '',
     mataPelajaran: '',
@@ -178,7 +178,7 @@ export const AdminDashboard: React.FC = () => {
       nisn: formData.role === 'siswa' ? formData.nipNisn : undefined,
       email: formData.email || `${formData.username}@man11jakarta.sch.id`,
       mataPelajaran: formData.role === 'guru' ? formData.mataPelajaran : undefined,
-      kelasAjar: formData.role === 'guru' ? ['XII 1', 'XII 2'] : undefined,
+      kelasAjar: formData.role === 'guru' ? ['XII 3', 'XII 4'] : undefined,
       status: 'aktif',
     });
 
@@ -187,7 +187,7 @@ export const AdminDashboard: React.FC = () => {
       username: '',
       password: '',
       role: 'siswa',
-      kelas: 'XII 1',
+      kelas: 'XII 3',
       nipNisn: '',
       email: '',
       mataPelajaran: '',
@@ -307,9 +307,6 @@ export const AdminDashboard: React.FC = () => {
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               Manajemen Sekolah & Pengguna
             </h1>
-            <p className="mt-1 text-sm text-slate-300 max-w-2xl">
-              Kelola data akun Guru dan Siswa per kelas. Input manual atau impor langsung menggunakan file Excel (.xlsx / .csv) dan teks PDF.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -1826,7 +1823,7 @@ export const AdminDashboard: React.FC = () => {
                           ...editingUser,
                           role: 'siswa',
                           mataPelajaran: undefined,
-                          kelas: editingUser.kelas || 'XII 1',
+                          kelas: editingUser.kelas || 'XII 3',
                         })
                       }
                       className={`py-2 px-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1 transition cursor-pointer ${

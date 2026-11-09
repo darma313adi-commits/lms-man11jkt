@@ -755,28 +755,27 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
     setViolationCount(newCount);
     setCheatReason(deskripsi);
 
-    // REQUIREMENT 5: If reaching 3 violations, auto-logout and auto-submit exam
+    // REQUIREMENT: If reaching 3 violations, auto-logout, auto-submit exam, and redirect to Student Login Portal
     if (newCount >= 3) {
       alarmAudio.stopSiren();
       setIsCheatAlertOpen(false);
-      setIsViolationTerminated(true);
 
       try {
         sessionStorage.setItem('exam_logout_reason', 'cheating_limit');
+        sessionStorage.setItem('exam_logout_violation_reason', deskripsi || 'Terdeteksi keluar dari layar ujian atau berpindah tab');
+        window.history.replaceState(null, '', `${window.location.pathname}?role=siswa`);
       } catch {}
 
-      const result = finishAndSubmitExam();
-      if (result) {
-        setIsExamCompleted(true);
-        setCompletedResult(result);
-      }
+      // Otomatis kirim seluruh jawaban yang sudah dikerjakan
+      finishAndSubmitExam();
 
       if (document.fullscreenElement && document.exitFullscreen) {
         document.exitFullscreen().catch(() => {});
       }
 
-      setIsAutoLoggingOut(true);
-      setLogoutCountdown(4);
+      // Otomatis logout dan alihkan tampilan langsung ke layar login portal siswa
+      exitExamPlayer();
+      logout();
       return;
     }
 
@@ -860,6 +859,7 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
 
     try {
       sessionStorage.setItem('exam_logout_reason', 'time_expired');
+      window.history.replaceState(null, '', `${window.location.pathname}?role=siswa`);
     } catch {}
 
     const result = finishAndSubmitExam();

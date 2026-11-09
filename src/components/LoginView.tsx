@@ -29,8 +29,13 @@ import {
 export const LoginView: React.FC = () => {
   const { login, users, isCloudSynced } = useLMS();
 
-  // Role can be determined by ?role= query parameter
+  // Role can be determined by ?role= query parameter or auto exam logout
   const [activePortal, setActivePortal] = useState<'admin' | 'guru' | 'siswa' | 'kepala_madrasah' | 'select'>(() => {
+    try {
+      if (sessionStorage.getItem('exam_logout_reason')) {
+        return 'siswa';
+      }
+    } catch {}
     const params = new URLSearchParams(window.location.search);
     const roleParam = params.get('role')?.toLowerCase();
     if (roleParam === 'guru') return 'guru';
@@ -92,12 +97,19 @@ export const LoginView: React.FC = () => {
     // Check if redirected due to automatic exam logout (time expired or 3x violation)
     try {
       const logoutReason = sessionStorage.getItem('exam_logout_reason');
+      const violationReason = sessionStorage.getItem('exam_logout_violation_reason') || '';
       if (logoutReason) {
         sessionStorage.removeItem('exam_logout_reason');
+        sessionStorage.removeItem('exam_logout_violation_reason');
+        setActivePortal('siswa');
         if (logoutReason === 'time_expired') {
-          setErrorMsg('Waktu pengerjaan ujian telah habis. Seluruh jawaban Anda telah otomatis tersimpan dan dikirimkan ke server. Anda telah logout otomatis.');
+          setErrorMsg('Waktu pengerjaan ujian telah habis. Seluruh lembar jawaban Anda telah otomatis tersimpan dan dikirimkan ke server guru. Anda telah logout otomatis.');
         } else if (logoutReason === 'cheating_limit') {
-          setErrorMsg('Peringatan: Ujian dihentikan karena terdeteksi mencapai batas maksimal 3 kali pelanggaran. Seluruh lembar jawaban Anda telah otomatis dikirimkan ke guru pengampu dan akun Anda telah logout.');
+          setErrorMsg(
+            `🚨 Peringatan: Ujian dihentikan karena terdeteksi mencapai batas maksimal 3 kali pelanggaran${
+              violationReason ? ` (${violationReason})` : ''
+            }. Seluruh lembar jawaban yang telah dikerjakan telah otomatis tersimpan dan terkirim ke server guru pengampu, dan akun Anda telah otomatis logout.`
+          );
         }
       }
     } catch {}
@@ -331,9 +343,15 @@ export const LoginView: React.FC = () => {
 
             {/* Error Banner */}
             {errorMsg && (
-              <div className="mb-4 bg-rose-50 border-l-4 border-rose-500 p-3 rounded-md flex items-start gap-2.5 text-xs text-rose-800">
-                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                <span>{errorMsg}</span>
+              <div
+                className={`mb-4 p-3.5 rounded-2xl flex items-start gap-3 text-xs leading-relaxed ${
+                  errorMsg.includes('🚨')
+                    ? 'bg-rose-50 border-2 border-rose-500 text-rose-950 shadow-sm'
+                    : 'bg-rose-50 border-l-4 border-rose-500 text-rose-800'
+                }`}
+              >
+                <AlertCircle className={`w-5 h-5 shrink-0 mt-0.5 ${errorMsg.includes('🚨') ? 'text-rose-600' : 'text-rose-500'}`} />
+                <div className="flex-1 font-medium">{errorMsg}</div>
               </div>
             )}
 

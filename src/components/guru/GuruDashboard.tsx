@@ -109,7 +109,7 @@ export const GuruDashboard: React.FC = () => {
   const [selectedExamForSettings, setSelectedExamForSettings] = useState<Exam | null>(null);
   const [showQuestionEditorModal, setShowQuestionEditorModal] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<QuestionItem | null>(null);
-  const [newExamClasses, setNewExamClasses] = useState<string[]>(['XII 1', 'XII 2']);
+  const [newExamClasses, setNewExamClasses] = useState<string[]>(['XII 3', 'XII 4']);
 
   // Modals for Viewing Exam and Material
   const [selectedExamForView, setSelectedExamForView] = useState<Exam | null>(null);
@@ -142,7 +142,7 @@ export const GuruDashboard: React.FC = () => {
     judul: '',
     deskripsi: '',
     mataPelajaran: currentUser?.mataPelajaran || 'Biologi',
-    kelasTarget: 'XII 1, XII 2',
+    kelasTarget: 'XII 3, XII 4',
     durasiMenit: 60,
     kkm: 75,
     status: 'aktif' as 'draft' | 'aktif',
@@ -159,7 +159,7 @@ export const GuruDashboard: React.FC = () => {
     judul: '',
     deskripsi: '',
     mataPelajaran: currentUser?.mataPelajaran || 'Biologi',
-    kelasTarget: 'XII 1, XII 2',
+    kelasTarget: 'XII 3, XII 4',
     fileName: '',
     fileSize: '',
   });
@@ -213,7 +213,7 @@ export const GuruDashboard: React.FC = () => {
     const studentClasses = Array.from(
       new Set(users.filter((u) => u.role === 'siswa' && u.kelas).map((u) => u.kelas!.trim()))
     );
-    return studentClasses.length > 0 ? studentClasses : ['XII 1', 'XII 2'];
+    return studentClasses.length > 0 ? studentClasses : ['XII 3', 'XII 4'];
   }, [currentUser, exams, materials, users]);
 
   // Check if current teacher is a homeroom teacher (wali kelas)
@@ -360,7 +360,7 @@ export const GuruDashboard: React.FC = () => {
   const handleCreateExamSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const tokenClean = newExamData.tokenUjian.trim().toUpperCase() || 'MAN11';
-    const targetClasses = newExamClasses.length > 0 ? newExamClasses : ['XII 1', 'XII 2'];
+    const targetClasses = newExamClasses.length > 0 ? newExamClasses : ['XII 3', 'XII 4'];
     const created = createExam({
       judul: newExamData.judul,
       deskripsi: newExamData.deskripsi,
@@ -442,7 +442,7 @@ export const GuruDashboard: React.FC = () => {
       judul: '',
       deskripsi: '',
       mataPelajaran: currentUser?.mataPelajaran || 'Biologi',
-      kelasTarget: 'XII 1, XII 2',
+      kelasTarget: 'XII 3, XII 4',
       fileName: '',
       fileSize: '',
     });
@@ -2288,7 +2288,7 @@ export const GuruDashboard: React.FC = () => {
                       required
                       value={materialForm.kelasTarget}
                       onChange={(e) => setMaterialForm({ ...materialForm, kelasTarget: e.target.value })}
-                      placeholder="XII 1, XII 2"
+                      placeholder="XII 3, XII 4"
                       className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                     />
                   </div>
@@ -3188,7 +3188,7 @@ export const GuruDashboard: React.FC = () => {
                           type="button"
                           onClick={() => {
                             if (cls === 'Semua Kelas') {
-                              setNewExamClasses(newExamClasses.includes('Semua Kelas') ? ['XII 1'] : ['Semua Kelas']);
+                              setNewExamClasses(newExamClasses.includes('Semua Kelas') ? ['XII 3'] : ['Semua Kelas']);
                               return;
                             }
                             let next = newExamClasses.filter((c) => c !== 'Semua Kelas');

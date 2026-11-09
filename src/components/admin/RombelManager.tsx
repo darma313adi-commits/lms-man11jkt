@@ -348,7 +348,7 @@ export const RombelManager: React.FC<RombelManagerProps> = ({ onSelectPlotting }
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: XII 1, XII 2, XII 3, X 3"
+                  placeholder="Contoh: XII 3, XII 4, X 3, X 4"
                   value={formData.nama}
                   onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
                   className="w-full px-3.5 py-2.5 text-xs font-bold border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
