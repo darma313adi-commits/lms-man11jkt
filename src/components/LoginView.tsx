@@ -66,8 +66,8 @@ export const LoginView: React.FC = () => {
       setPassword('guru123');
     } else if (roleParam === 'siswa') {
       setActivePortal('siswa');
-      setUsername('siswa_budi');
-      setPassword('siswa123');
+      setUsername('');
+      setPassword('');
     } else if (roleParam === 'admin') {
       setActivePortal('admin');
       setUsername('darma313adi');
@@ -128,8 +128,8 @@ export const LoginView: React.FC = () => {
       setUsername('guru_fauzan');
       setPassword('guru123');
     } else {
-      setUsername('siswa_budi');
-      setPassword('siswa123');
+      setUsername('');
+      setPassword('');
     }
     const newUrl = `${window.location.pathname}?role=${role}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
@@ -430,47 +430,49 @@ export const LoginView: React.FC = () => {
               </button>
             </form>
 
-            {/* Quick Demo Credentials Helper (Strictly for this role) */}
-            <div className="mt-5 pt-4 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setShowQuickAccounts(!showQuickAccounts)}
-                className="w-full flex items-center justify-between text-xs font-bold text-slate-600 hover:text-slate-900"
-              >
-                <span className="flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Daftar Akun Pengujian Demo {activePortal === 'siswa' ? 'Siswa' : activePortal === 'guru' ? 'Guru' : 'Admin'}</span>
-                </span>
-                {showQuickAccounts ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </button>
+            {/* Quick Demo Credentials Helper (Dihilangkan untuk Portal Siswa demi privasi akun) */}
+            {activePortal !== 'siswa' && (
+              <div className="mt-5 pt-4 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickAccounts(!showQuickAccounts)}
+                  className="w-full flex items-center justify-between text-xs font-bold text-slate-600 hover:text-slate-900"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Daftar Akun Pengujian Demo {activePortal === 'guru' ? 'Guru' : activePortal === 'kepala_madrasah' ? 'Kepala Madrasah' : 'Admin'}</span>
+                  </span>
+                  {showQuickAccounts ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
 
-              {showQuickAccounts && (
-                <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto">
-                  {roleUsers.map((u) => (
-                    <div
-                      key={u.id}
-                      onClick={() => {
-                        setUsername(u.username);
-                        setPassword(u.password);
-                      }}
-                      className="p-2 rounded-xl bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 flex items-center justify-between cursor-pointer transition text-xs"
-                    >
-                      <div>
-                        <p className="font-bold text-slate-900">{u.name}</p>
-                        <p className="text-[11px] text-slate-500 font-mono">
-                          Username: <strong>{u.username}</strong> | Pass: <strong>{u.password}</strong>
-                          {u.kelas ? ` | Kelas: ${u.kelas}` : ''}
-                          {u.mataPelajaran ? ` | Mapel: ${u.mataPelajaran}` : ''}
-                        </p>
+                {showQuickAccounts && (
+                  <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto">
+                    {roleUsers.map((u) => (
+                      <div
+                        key={u.id}
+                        onClick={() => {
+                          setUsername(u.username);
+                          setPassword(u.password);
+                        }}
+                        className="p-2 rounded-xl bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 flex items-center justify-between cursor-pointer transition text-xs"
+                      >
+                        <div>
+                          <p className="font-bold text-slate-900">{u.name}</p>
+                          <p className="text-[11px] text-slate-500 font-mono">
+                            Username: <strong>{u.username}</strong> | Pass: <strong>{u.password}</strong>
+                            {u.kelas ? ` | Kelas: ${u.kelas}` : ''}
+                            {u.mataPelajaran ? ` | Mapel: ${u.mataPelajaran}` : ''}
+                          </p>
+                        </div>
+                        <span className="text-[10px] font-bold text-indigo-700 px-2 py-0.5 rounded bg-indigo-100">
+                          Pilih
+                        </span>
                       </div>
-                      <span className="text-[10px] font-bold text-indigo-700 px-2 py-0.5 rounded bg-indigo-100">
-                        Pilih
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Public Link Share Box for this Role (Dihilangkan untuk Portal Siswa) */}
             {activePortal !== 'siswa' && (
