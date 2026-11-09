@@ -154,7 +154,10 @@ export function exportGradesPdf({
       );
       const nilai = sub ? sub.nilai100 : null;
       const statusKetuntasan = nilai !== null ? (nilai >= exam.kkm ? 'TUNTAS' : 'REMEDIAL') : 'BELUM UJIAN';
-      const waktuSelesai = sub?.waktuSelesai
+      const jamLogin = sub?.waktuMulai
+        ? new Date(sub.waktuMulai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+        : '-';
+      const jamKirim = sub?.waktuSelesai
         ? new Date(sub.waktuSelesai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
         : '-';
 
@@ -165,14 +168,18 @@ export function exportGradesPdf({
         st.kelas || kelasName,
         nilai !== null ? nilai : '-',
         statusKetuntasan,
-        waktuSelesai,
+        jamLogin,
+        jamKirim,
       ]);
     });
   } else {
     // If no roster provided, list from submissions
     classSubmissions.forEach((sub, idx) => {
       const statusKetuntasan = sub.nilai100 >= exam.kkm ? 'TUNTAS' : 'REMEDIAL';
-      const waktuSelesai = sub.waktuSelesai
+      const jamLogin = sub.waktuMulai
+        ? new Date(sub.waktuMulai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+        : '-';
+      const jamKirim = sub.waktuSelesai
         ? new Date(sub.waktuSelesai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
         : '-';
 
@@ -183,14 +190,15 @@ export function exportGradesPdf({
         sub.siswaKelas || kelasName,
         sub.nilai100,
         statusKetuntasan,
-        waktuSelesai,
+        jamLogin,
+        jamKirim,
       ]);
     });
   }
 
   autoTable(doc, {
     startY: curY + 18,
-    head: [['No', 'NISN / Username', 'Nama Siswa', 'Kelas', 'Nilai', 'Status', 'Jam Selesai']],
+    head: [['No', 'NISN / Username', 'Nama Siswa', 'Kelas', 'Nilai', 'Status', 'Jam Login', 'Jam Kirim']],
     body: tableRows,
     theme: 'grid',
     styles: {

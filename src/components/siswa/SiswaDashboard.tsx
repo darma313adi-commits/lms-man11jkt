@@ -8,6 +8,7 @@ import {
   Play,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Shield,
   FileText,
   Calendar,
@@ -30,6 +31,7 @@ export const SiswaDashboard: React.FC = () => {
   const [previewMaterial, setPreviewMaterial] = useState<LessonMaterial | null>(null);
   const [tokenInput, setTokenInput] = useState('');
   const [tokenError, setTokenError] = useState<string | null>(null);
+  const [alreadySubmittedAlert, setAlreadySubmittedAlert] = useState<string | null>(null);
 
   if (!currentUser) return null;
 
@@ -56,12 +58,35 @@ export const SiswaDashboard: React.FC = () => {
   const studentSubmissions = submissions.filter((s) => s.siswaId === currentUser.id);
 
   const handleOpenStartExamModal = (exam: Exam) => {
+    // Check if student already submitted this exam
+    const existingSub = submissions.find(
+      (s) => s.examId === exam.id && s.siswaId === currentUser.id && s.status === 'sudah_dikumpulkan'
+    );
+    if (existingSub) {
+      setAlreadySubmittedAlert(
+        `Peringatan: Anda sudah menyelesaikan dan mengirim jawaban untuk ujian "${exam.judul}". Anda tidak dapat login kembali pada ujian yang sama.`
+      );
+      return;
+    }
+
     setSelectedExamToStart(exam);
     setTokenInput('');
     setTokenError(null);
   };
 
   const handleConfirmStartExam = (exam: Exam) => {
+    // Strict check: already submitted
+    const existingSub = submissions.find(
+      (s) => s.examId === exam.id && s.siswaId === currentUser.id && s.status === 'sudah_dikumpulkan'
+    );
+    if (existingSub) {
+      setAlreadySubmittedAlert(
+        `Peringatan: Anda sudah menyelesaikan dan mengirim jawaban untuk ujian "${exam.judul}". Anda tidak dapat login kembali pada ujian yang sama.`
+      );
+      setSelectedExamToStart(null);
+      return;
+    }
+
     // Check token if required
     if (exam.useToken) {
       const entered = tokenInput.trim().toUpperCase();
@@ -300,10 +325,17 @@ export const SiswaDashboard: React.FC = () => {
                             Sudah Dikerjakan (Nilai: {existingSub.nilai100}/100)
                           </span>
                           <button
-                            onClick={() => startExamSession(exam, currentUser)}
-                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+                            type="button"
+                            onClick={() => {
+                              setAlreadySubmittedAlert(
+                                `Peringatan: Anda sudah menyelesaikan dan mengirim jawaban untuk ujian "${exam.judul}". Anda tidak dapat login atau mengerjakan kembali ujian ini.`
+                              );
+                            }}
+                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition cursor-pointer flex items-center gap-1"
+                            title="Jawaban Anda sudah terkirim ke server guru"
                           >
-                            Tinjau Hasil
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Jawaban Terkirim</span>
                           </button>
                         </div>
                       ) : !isExamActive ? (
@@ -437,7 +469,8 @@ export const SiswaDashboard: React.FC = () => {
                 <tr>
                   <th className="px-4 py-3">Nama Ujian</th>
                   <th className="px-4 py-3">Mata Pelajaran</th>
-                  <th className="px-4 py-3">Waktu Selesai</th>
+                  <th className="px-4 py-3">Jam Login</th>
+                  <th className="px-4 py-3">Jam Kirim</th>
                   <th className="px-4 py-3">Skor</th>
                   <th className="px-4 py-3">Nilai (/100)</th>
                   <th className="px-4 py-3">Status</th>
@@ -447,7 +480,7 @@ export const SiswaDashboard: React.FC = () => {
               <tbody className="divide-y divide-slate-200">
                 {studentSubmissions.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                    <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                       Belum ada riwayat ujian yang selesai dikerjakan.
                     </td>
                   </tr>
@@ -458,8 +491,11 @@ export const SiswaDashboard: React.FC = () => {
                       <tr key={sub.id} className="hover:bg-slate-50 transition">
                         <td className="px-4 py-3 font-bold text-slate-900">{sub.examJudul}</td>
                         <td className="px-4 py-3 text-slate-600">{sub.mataPelajaran}</td>
-                        <td className="px-4 py-3 font-mono text-slate-500">
-                          {sub.waktuSelesai ? new Date(sub.waktuSelesai).toLocaleString('id-ID') : '-'}
+                        <td className="px-4 py-3 font-mono text-slate-700 text-xs font-semibold">
+                          {sub.waktuMulai ? new Date(sub.waktuMulai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-emerald-700 text-xs font-bold">
+                          {sub.waktuSelesai ? new Date(sub.waktuSelesai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
                         </td>
                         <td className="px-4 py-3 font-mono text-slate-700 font-semibold">
                           {sub.totalSkor} / {sub.maxSkor}
@@ -658,6 +694,30 @@ export const SiswaDashboard: React.FC = () => {
                   Tutup
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Peringatan Sudah Mengirim Jawaban Ujian */}
+      {alreadySubmittedAlert && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 text-center shadow-2xl border border-slate-200 animate-in zoom-in-95">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto mb-3">
+              <AlertTriangle className="w-8 h-8" />
+            </div>
+            <h3 className="text-base font-black text-slate-900">Ujian Telah Selesai</h3>
+            <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+              {alreadySubmittedAlert}
+            </p>
+            <div className="mt-5">
+              <button
+                type="button"
+                onClick={() => setAlreadySubmittedAlert(null)}
+                className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition shadow-sm cursor-pointer"
+              >
+                Tutup & Mengerti
+              </button>
             </div>
           </div>
         </div>

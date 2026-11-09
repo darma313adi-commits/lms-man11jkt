@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import { QuestionItem, QuestionType, PilihanOpsi } from '../../types';
+import {
+  QuestionItem,
+  QuestionType,
+  PilihanOpsi,
+  PasanganMenjodohkan,
+  PernyataanTKA,
+} from '../../types';
 import {
   X,
   Image as ImageIcon,
@@ -10,6 +16,8 @@ import {
   FileQuestion,
   HelpCircle,
   Plus,
+  BookOpen,
+  ArrowRight,
 } from 'lucide-react';
 
 interface QuestionImageEditorModalProps {
@@ -59,6 +67,30 @@ export const QuestionImageEditorModal: React.FC<QuestionImageEditorModalProps> =
       { id: 'opt_C', label: 'C', text: '', gambar: '' },
       { id: 'opt_D', label: 'D', text: '', gambar: '' },
       { id: 'opt_E', label: 'E', text: '', gambar: '' },
+    ];
+  });
+
+  // State for Menjodohkan
+  const [pasanganList, setPasanganList] = useState<PasanganMenjodohkan[]>(() => {
+    if (initialQuestion?.pasangan && initialQuestion.pasangan.length > 0) {
+      return initialQuestion.pasangan;
+    }
+    return [
+      { id: 'p_1', premis: '', jawaban: '' },
+      { id: 'p_2', premis: '', jawaban: '' },
+      { id: 'p_3', premis: '', jawaban: '' },
+    ];
+  });
+
+  // State for TKA Benar-Salah
+  const [pernyataanTKAList, setPernyataanTKAList] = useState<PernyataanTKA[]>(() => {
+    if (initialQuestion?.pernyataanTKA && initialQuestion.pernyataanTKA.length > 0) {
+      return initialQuestion.pernyataanTKA;
+    }
+    return [
+      { id: 'tka_1', pernyataan: '', kunci: 'Benar' },
+      { id: 'tka_2', pernyataan: '', kunci: 'Salah' },
+      { id: 'tka_3', pernyataan: '', kunci: 'Benar' },
     ];
   });
 
@@ -128,12 +160,94 @@ export const QuestionImageEditorModal: React.FC<QuestionImageEditorModalProps> =
     }
   };
 
+  // Handlers for Menjodohkan
+  const handleUpdatePremis = (idx: number, premis: string) => {
+    setPasanganList((prev) => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], premis };
+      return copy;
+    });
+  };
+
+  const handleUpdateJawabanPasangan = (idx: number, jawaban: string) => {
+    setPasanganList((prev) => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], jawaban };
+      return copy;
+    });
+  };
+
+  const handleAddPasangan = () => {
+    setPasanganList((prev) => [
+      ...prev,
+      { id: `p_${Date.now()}_${prev.length + 1}`, premis: '', jawaban: '' },
+    ]);
+  };
+
+  const handleRemovePasangan = (idx: number) => {
+    if (pasanganList.length <= 2) {
+      alert('Soal menjodohkan minimal memiliki 2 pasang premis dan jawaban.');
+      return;
+    }
+    setPasanganList((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // Handlers for TKA Benar-Salah
+  const handleUpdatePernyataanTKA = (idx: number, text: string) => {
+    setPernyataanTKAList((prev) => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], pernyataan: text };
+      return copy;
+    });
+  };
+
+  const handleToggleKunciTKA = (idx: number, kunci: 'Benar' | 'Salah') => {
+    setPernyataanTKAList((prev) => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], kunci };
+      return copy;
+    });
+  };
+
+  const handleAddPernyataanTKA = () => {
+    setPernyataanTKAList((prev) => [
+      ...prev,
+      { id: `tka_${Date.now()}_${prev.length + 1}`, pernyataan: '', kunci: 'Benar' },
+    ]);
+  };
+
+  const handleRemovePernyataanTKA = (idx: number) => {
+    if (pernyataanTKAList.length <= 1) {
+      alert('Soal model TKA minimal memiliki 1 pernyataan.');
+      return;
+    }
+    setPernyataanTKAList((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!pertanyaan.trim()) {
       alert('Redaksi teks pertanyaan wajib diisi!');
       return;
+    }
+
+    if (type === 'menjodohkan') {
+      const incomplete = pasanganList.some(
+        (p) => !p.premis.trim() || !p.jawaban.trim()
+      );
+      if (incomplete) {
+        alert('Seluruh baris premis dan jawaban pasangan wajib diisi lengkap!');
+        return;
+      }
+    }
+
+    if (type === 'tka_benar_salah') {
+      const incomplete = pernyataanTKAList.some((s) => !s.pernyataan.trim());
+      if (incomplete) {
+        alert('Seluruh teks pernyataan model TKA wajib diisi!');
+        return;
+      }
     }
 
     let kunci: string | string[] = kunciJawabanSingle;
@@ -161,8 +275,8 @@ export const QuestionImageEditorModal: React.FC<QuestionImageEditorModalProps> =
             }))
           : undefined,
       kunciJawaban: kunci,
-      pasangan: initialQuestion?.pasangan,
-      pernyataanTKA: initialQuestion?.pernyataanTKA,
+      pasangan: type === 'menjodohkan' ? pasanganList : undefined,
+      pernyataanTKA: type === 'tka_benar_salah' ? pernyataanTKAList : undefined,
     };
 
     onSave(questionResult);
@@ -212,6 +326,8 @@ export const QuestionImageEditorModal: React.FC<QuestionImageEditorModalProps> =
                 <option value="pilihan_ganda">Pilihan Ganda (1 Jawaban Benar)</option>
                 <option value="pilihan_ganda_kompleks">Pilihan Ganda Kompleks (Banyak Jawaban Benar)</option>
                 <option value="isian_singkat">Isian Singkat</option>
+                <option value="menjodohkan">Menjodohkan / Memasangkan (Premis & Pasangan Jawaban)</option>
+                <option value="tka_benar_salah">Benar-Salah Model TKA (Stimulus & Pernyataan)</option>
               </select>
             </div>
 
@@ -229,6 +345,29 @@ export const QuestionImageEditorModal: React.FC<QuestionImageEditorModalProps> =
               />
             </div>
           </div>
+
+          {/* Wacana / Stimulus Model TKA */}
+          {(type === 'tka_benar_salah' || deskripsiStimulus) && (
+            <div className="p-4 bg-indigo-50/40 border border-indigo-200 rounded-2xl space-y-2">
+              <label className="block text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                <BookOpen className="w-4 h-4 text-indigo-600" />
+                <span>
+                  Wacana / Teks Stimulus Bacaan (Model TKA / Soal Cerita){' '}
+                  {type === 'tka_benar_salah' && <span className="text-rose-500">*</span>}
+                </span>
+              </label>
+              <textarea
+                rows={3}
+                value={deskripsiStimulus}
+                onChange={(e) => setDeskripsiStimulus(e.target.value)}
+                placeholder="Tuliskan teks bacaan wacana, artikel ilmiah, atau data acuan untuk pernyataan..."
+                className="w-full text-xs p-3 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 leading-relaxed font-sans"
+              />
+              <p className="text-[10px] text-indigo-600 font-medium">
+                Wacana ini akan ditampilkan di atas butir soal sebagai stimulus referensi bagi siswa.
+              </p>
+            </div>
+          )}
 
           {/* Redaksi Teks Pertanyaan */}
           <div>
@@ -455,6 +594,188 @@ export const QuestionImageEditorModal: React.FC<QuestionImageEditorModalProps> =
               <p className="text-[10px] text-slate-500">
                 Pemeriksaan jawaban siswa bersifat fleksibel dan tidak membedakan huruf besar/kecil.
               </p>
+            </div>
+          )}
+
+          {/* EDITOR SOAL TIPE: MENJODOHKAN / MEMASANGKAN */}
+          {type === 'menjodohkan' && (
+            <div className="space-y-4 pt-2 border-t border-slate-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <ArrowRight className="w-4 h-4 text-indigo-600" />
+                    <span>Daftar Pasangan Menjodohkan (Premis ➔ Jawaban yang Cocok)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Isi kolom premis di sebelah kiri dan pasangan jawaban yang benar di sebelah kanan. Sistem akan mengacak urutan dan pilihan di layar siswa.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddPasangan}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs border border-indigo-200 transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Tambah Baris</span>
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {pasanganList.map((item, idx) => (
+                  <div
+                    key={item.id}
+                    className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                      {idx + 1}
+                    </span>
+
+                    {/* Premis (Kiri) */}
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                        Premis / Pernyataan Kiri
+                      </label>
+                      <input
+                        type="text"
+                        value={item.premis}
+                        onChange={(e) => handleUpdatePremis(idx, e.target.value)}
+                        placeholder="Contoh: Mitokondria"
+                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
+                        required
+                      />
+                    </div>
+
+                    <div className="hidden sm:flex items-center justify-center pt-4 text-slate-400">
+                      <ArrowRight className="w-4 h-4" />
+                    </div>
+
+                    {/* Pasangan Jawaban (Kanan) */}
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-bold text-indigo-700 mb-0.5">
+                        Kunci Jawaban Pasangan Kanan
+                      </label>
+                      <input
+                        type="text"
+                        value={item.jawaban}
+                        onChange={(e) => handleUpdateJawabanPasangan(idx, e.target.value)}
+                        placeholder="Contoh: Penghasil energi sel (ATP)"
+                        className="w-full text-xs px-3 py-2 bg-white border border-indigo-300 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium text-indigo-950"
+                        required
+                      />
+                    </div>
+
+                    {/* Tombol Hapus */}
+                    <div className="sm:pt-4">
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePasangan(idx)}
+                        disabled={pasanganList.length <= 2}
+                        className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 border border-rose-200 transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                        title="Hapus baris pasangan ini"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* EDITOR SOAL TIPE: MODEL TKA (BENAR / SALAH 3 PERNYATAAN) */}
+          {type === 'tka_benar_salah' && (
+            <div className="space-y-4 pt-2 border-t border-slate-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                    <span>Daftar Pernyataan Model TKA & Kunci Benar / Salah</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Tuliskan kalimat pernyataan dan tentukan nilai kebenaran (Benar atau Salah) untuk setiap pernyataan.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddPernyataanTKA}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs border border-indigo-200 transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Tambah Pernyataan</span>
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {pernyataanTKAList.map((stmt, idx) => (
+                  <div
+                    key={stmt.id}
+                    className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                      {idx + 1}
+                    </span>
+
+                    {/* Pernyataan */}
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                        Kalimat Pernyataan {idx + 1}
+                      </label>
+                      <input
+                        type="text"
+                        value={stmt.pernyataan}
+                        onChange={(e) => handleUpdatePernyataanTKA(idx, e.target.value)}
+                        placeholder="Tuliskan kalimat pernyataan yang harus dinilai siswa..."
+                        className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
+                        required
+                      />
+                    </div>
+
+                    {/* Kunci Toggle Benar / Salah */}
+                    <div className="shrink-0">
+                      <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                        Kunci Jawaban
+                      </label>
+                      <div className="inline-flex p-1 bg-white border border-slate-300 rounded-xl gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleKunciTKA(idx, 'Benar')}
+                          className={`px-3 py-1 rounded-lg font-bold text-xs transition cursor-pointer ${
+                            stmt.kunci === 'Benar'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          Benar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleKunciTKA(idx, 'Salah')}
+                          className={`px-3 py-1 rounded-lg font-bold text-xs transition cursor-pointer ${
+                            stmt.kunci === 'Salah'
+                              ? 'bg-rose-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          Salah
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tombol Hapus */}
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePernyataanTKA(idx)}
+                        disabled={pernyataanTKAList.length <= 1}
+                        className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 border border-rose-200 transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                        title="Hapus pernyataan ini"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

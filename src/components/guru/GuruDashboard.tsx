@@ -40,6 +40,8 @@ import {
   LayoutGrid,
   RotateCcw,
   X,
+  EyeOff,
+  ArrowUpDown,
 } from 'lucide-react';
 import {
   downloadQuestionTemplateExcel,
@@ -96,6 +98,10 @@ export const GuruDashboard: React.FC = () => {
   const [navOrientation, setNavOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
   const [selectedExamId, setSelectedExamId] = useState<string>(exams[0]?.id || '');
   const [koreksiKelasFilter, setKoreksiKelasFilter] = useState<string>('all');
+  const [rekapSortBy, setRekapSortBy] = useState<
+    'nama_asc' | 'nama_desc' | 'nilai_desc' | 'nilai_asc' | 'waktu_login_desc' | 'waktu_login_asc' | 'waktu_kirim_desc'
+  >('nama_asc');
+  const [isScoresBlurred, setIsScoresBlurred] = useState<boolean>(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [selectedClassForRoster, setSelectedClassForRoster] = useState<string | null>(null);
   const [rosterSearch, setRosterSearch] = useState('');
@@ -2523,6 +2529,28 @@ export const GuruDashboard: React.FC = () => {
                 (s) => (s.siswaKelas || '').trim().toLowerCase() === koreksiKelasFilter.trim().toLowerCase()
               );
 
+        // Sorting Submissions based on rekapSortBy
+        const sortedSubmissions = [...displayedSubmissions].sort((a, b) => {
+          switch (rekapSortBy) {
+            case 'nama_asc':
+              return a.siswaNama.localeCompare(b.siswaNama, 'id-ID');
+            case 'nama_desc':
+              return b.siswaNama.localeCompare(a.siswaNama, 'id-ID');
+            case 'nilai_desc':
+              return (b.nilai100 ?? 0) - (a.nilai100 ?? 0);
+            case 'nilai_asc':
+              return (a.nilai100 ?? 0) - (b.nilai100 ?? 0);
+            case 'waktu_login_desc':
+              return new Date(b.waktuMulai || 0).getTime() - new Date(a.waktuMulai || 0).getTime();
+            case 'waktu_login_asc':
+              return new Date(a.waktuMulai || 0).getTime() - new Date(b.waktuMulai || 0).getTime();
+            case 'waktu_kirim_desc':
+              return new Date(b.waktuSelesai || 0).getTime() - new Date(a.waktuSelesai || 0).getTime();
+            default:
+              return 0;
+          }
+        });
+
         return (
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs space-y-0">
             {/* Header Toolbar */}
@@ -2542,14 +2570,15 @@ export const GuruDashboard: React.FC = () => {
                     Rekapitulasi Nilai & Kelola Peserta: {activeExam.judul}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Menampilkan <strong>{displayedSubmissions.length}</strong> dari total <strong>{examSubmissions.length}</strong> siswa yang telah mengumpulkan lembar ujian.
+                    Menampilkan <strong>{sortedSubmissions.length}</strong> dari total <strong>{examSubmissions.length}</strong> siswa yang telah mengumpulkan lembar ujian.
                   </p>
                 </div>
 
-                {/* Filter Kelas Selector */}
+                {/* Filter Kelas, Urutkan Peserta, & Blur Nilai Controls */}
                 <div className="flex flex-wrap items-center gap-2">
+                  {/* Filter / Pilih Kelas */}
                   <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 shadow-2xs">
-                    <span className="text-xs font-bold text-slate-600 whitespace-nowrap">Filter Kelas:</span>
+                    <span className="text-xs font-bold text-slate-600 whitespace-nowrap">Pilih Kelas:</span>
                     <select
                       value={koreksiKelasFilter}
                       onChange={(e) => setKoreksiKelasFilter(e.target.value)}
@@ -2568,6 +2597,44 @@ export const GuruDashboard: React.FC = () => {
                       })}
                     </select>
                   </div>
+
+                  {/* Urutkan Peserta Dropdown */}
+                  <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 shadow-2xs">
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="text-xs font-bold text-slate-600 whitespace-nowrap">Urutkan:</span>
+                    <select
+                      value={rekapSortBy}
+                      onChange={(e) => setRekapSortBy(e.target.value as any)}
+                      className="text-xs font-bold text-slate-900 bg-transparent focus:outline-hidden cursor-pointer"
+                    >
+                      <option value="nama_asc">Nama Lengkap (A → Z)</option>
+                      <option value="nama_desc">Nama Lengkap (Z → A)</option>
+                      <option value="nilai_desc">Nilai / Skor Tertinggi (100 → 0)</option>
+                      <option value="nilai_asc">Nilai / Skor Terendah (0 → 100)</option>
+                      <option value="waktu_login_desc">Waktu Login / Mulai (Terbaru)</option>
+                      <option value="waktu_login_asc">Waktu Login / Mulai (Terlama)</option>
+                      <option value="waktu_kirim_desc">Waktu Kirim / Selesai (Terbaru)</option>
+                    </select>
+                  </div>
+
+                  {/* Tombol Blur Skor & Nilai untuk Privasi Proyektor */}
+                  <button
+                    type="button"
+                    onClick={() => setIsScoresBlurred(!isScoresBlurred)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs border transition cursor-pointer shadow-2xs ${
+                      isScoresBlurred
+                        ? 'bg-amber-100 text-amber-900 border-amber-300 ring-2 ring-amber-400/30'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
+                    }`}
+                    title="Sembunyikan / Blur skor dan nilai siswa demi menjaga privasi saat layar ditampilkan di kelas"
+                  >
+                    {isScoresBlurred ? (
+                      <EyeOff className="w-4 h-4 text-amber-700" />
+                    ) : (
+                      <Eye className="w-4 h-4 text-slate-600" />
+                    )}
+                    <span>{isScoresBlurred ? 'Nilai Disensor (Blur Aktif)' : 'Blur Skor & Nilai'}</span>
+                  </button>
                 </div>
               </div>
 
@@ -2575,6 +2642,10 @@ export const GuruDashboard: React.FC = () => {
               <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200">
                 {/* Export & Print actions */}
                 <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-xs font-bold text-slate-600 flex items-center gap-1 mr-1">
+                    <span>Unduh Hasil:</span>
+                  </div>
+
                   {/* Unduh Excel per kelas */}
                   <button
                     type="button"
@@ -2596,8 +2667,8 @@ export const GuruDashboard: React.FC = () => {
                     <Download className="w-4 h-4" />
                     <span>
                       {koreksiKelasFilter === 'all'
-                        ? 'Unduh Excel Nilai (.xlsx)'
-                        : `Unduh Excel Kelas ${koreksiKelasFilter}`}
+                        ? 'Unduh Excel (Semua Kelas)'
+                        : `Unduh Excel (Kelas ${koreksiKelasFilter})`}
                     </span>
                   </button>
 
@@ -2619,10 +2690,18 @@ export const GuruDashboard: React.FC = () => {
                     }}
                     disabled={displayedSubmissions.length === 0}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
-                    title="Unduh Laporan Rekap Nilai Format PDF Cetak Resmi"
+                    title={
+                      koreksiKelasFilter === 'all'
+                        ? 'Unduh Laporan Rekap Nilai Format PDF Cetak Resmi (Semua Kelas)'
+                        : `Unduh Laporan Rekap Nilai Format PDF Cetak Resmi (Kelas ${koreksiKelasFilter})`
+                    }
                   >
                     <FileText className="w-4 h-4" />
-                    <span>Laporan Nilai (PDF)</span>
+                    <span>
+                      {koreksiKelasFilter === 'all'
+                        ? 'Laporan PDF (Semua Kelas)'
+                        : `Laporan PDF (Kelas ${koreksiKelasFilter})`}
+                    </span>
                   </button>
 
                   {/* Unduh Soal ke PDF */}
@@ -2655,7 +2734,7 @@ export const GuruDashboard: React.FC = () => {
                     onClick={() => {
                       if (koreksiKelasFilter === 'all') {
                         alert(
-                          'Untuk melakukan Reset Per Kelas, silakan pilih salah satu kelas terlebih dahulu pada menu "Filter Kelas" di atas.'
+                          'Untuk melakukan Reset Per Kelas, silakan pilih salah satu kelas terlebih dahulu pada menu "Pilih Kelas" di atas.'
                         );
                         return;
                       }
@@ -2713,20 +2792,22 @@ export const GuruDashboard: React.FC = () => {
                     <th className="px-4 py-3">Nilai (/100)</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Pelanggaran Curang</th>
+                    <th className="px-3 py-3">Jam Login</th>
+                    <th className="px-3 py-3">Jam Kirim</th>
                     <th className="px-4 py-3 text-right">Aksi & Reset</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {displayedSubmissions.length === 0 ? (
+                  {sortedSubmissions.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
+                      <td colSpan={10} className="px-4 py-10 text-center text-slate-400">
                         {koreksiKelasFilter === 'all'
                           ? 'Belum ada siswa yang mengumpulkan jawaban untuk ujian ini.'
                           : `Belum ada siswa dari kelas ${koreksiKelasFilter} yang mengumpulkan jawaban.`}
                       </td>
                     </tr>
                   ) : (
-                    displayedSubmissions.map((sub, idx) => {
+                    sortedSubmissions.map((sub, idx) => {
                       const isPassed = sub.nilai100 >= activeExam.kkm;
                       const violationCount = sub.violations?.length || 0;
                       return (
@@ -2742,19 +2823,29 @@ export const GuruDashboard: React.FC = () => {
                             </span>
                           </td>
                           <td className="px-4 py-3 font-mono font-semibold text-slate-700">
-                            {sub.totalSkor} / {sub.maxSkor}
+                            <span className={isScoresBlurred ? 'filter blur-xs select-none transition-all duration-200' : ''}>
+                              {isScoresBlurred ? '••• / •••' : `${sub.totalSkor} / ${sub.maxSkor}`}
+                            </span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="text-sm font-black text-indigo-700 font-mono">{sub.nilai100}</span>
+                            <span
+                              className={`text-sm font-black text-indigo-700 font-mono ${
+                                isScoresBlurred ? 'filter blur-xs select-none transition-all duration-200' : ''
+                              }`}
+                            >
+                              {isScoresBlurred ? '•••' : sub.nilai100}
+                            </span>
                             <span className="text-slate-400 text-[10px]"> / 100</span>
                           </td>
                           <td className="px-4 py-3">
                             <span
                               className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                                isScoresBlurred ? 'filter blur-xs select-none' : ''
+                              } ${
                                 isPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                               }`}
                             >
-                              {isPassed ? 'TUNTAS' : 'REMIDI'}
+                              {isScoresBlurred ? '••••' : isPassed ? 'TUNTAS' : 'REMIDI'}
                             </span>
                           </td>
                           <td className="px-4 py-3">
@@ -2766,6 +2857,12 @@ export const GuruDashboard: React.FC = () => {
                             ) : (
                               <span className="text-emerald-600 font-bold text-[11px]">Bersih (0)</span>
                             )}
+                          </td>
+                          <td className="px-3 py-3 font-mono text-[11px] text-slate-700 whitespace-nowrap">
+                            {sub.waktuMulai ? new Date(sub.waktuMulai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
+                          </td>
+                          <td className="px-3 py-3 font-mono text-[11px] text-emerald-700 font-bold whitespace-nowrap">
+                            {sub.waktuSelesai ? new Date(sub.waktuSelesai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="inline-flex items-center gap-1.5 justify-end">

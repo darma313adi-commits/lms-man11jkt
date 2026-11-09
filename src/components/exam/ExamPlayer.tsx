@@ -1,6 +1,27 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLMS } from '../../context/LMSContext';
 import { QuestionItem, Exam, ExamSubmission } from '../../types';
+
+// Deterministic pseudo-random shuffle helper based on seed string
+const getDeterministicShuffle = <T,>(items: T[], seedStr: string): T[] => {
+  if (items.length <= 1) return [...items];
+  const copy = [...items];
+  let hash = 0;
+  for (let i = 0; i < seedStr.length; i++) {
+    hash = (hash << 5) - hash + seedStr.charCodeAt(i);
+    hash |= 0;
+  }
+  let seed = Math.abs(hash) + 1;
+  const rng = () => {
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  };
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+};
 import {
   Clock,
   ChevronLeft,
@@ -24,15 +45,502 @@ import {
   EyeOff,
   LayoutGrid,
   MoveHorizontal,
+  Check,
+  ArrowRight,
+  Sparkles,
 } from 'lucide-react';
 import { alarmAudio } from '../../utils/audioAlarm';
 import { APP_LOGO_URL } from '../../constants/assets';
 import confetti from 'canvas-confetti';
 
+// Robust detection for iPad, iPhone, iPod, or Mac touch screen (iPadOS 13+ reports as MacIntel with touch points)
+const isTouchOrAppleDevice = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua);
+  const isIPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  const isTouch = navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
+  return isIOS || isIPadOS || isTouch;
+};
+
 interface ExamPlayerProps {
   exam: Exam;
   submission: ExamSubmission;
 }
+
+const MatchingQuestionPlayer: React.FC<{
+  currentSoal: QuestionItem;
+  currentAnswer: any;
+  submissionId: string;
+  updateStudentAnswer: (soalId: string, answer: any) => void;
+}> = ({ currentSoal, currentAnswer, submissionId, updateStudentAnswer }) => {
+  const pasangan = currentSoal.pasangan || [];
+
+  const [selectedPremisId, setSelectedPremisId] = useState<string | null>(null);
+  const [activeModalPremis, setActiveModalPremis] = useState<{ id: string; premis: string } | null>(null);
+  const [viewMode, setViewMode] = useState<'touch' | 'dropdown'>('touch');
+
+  const { premisList, answerChoices } = useMemo(() => {
+    if (pasangan.length === 0) return { premisList: [], answerChoices: [] };
+
+    const seedBase = `${currentSoal.id}_${submissionId}`;
+
+    // 1. Shuffle premis
+    let shuffledP = getDeterministicShuffle(pasangan, `${seedBase}_p`);
+    if (shuffledP.length > 1 && shuffledP.every((p, idx) => p.id === pasangan[idx].id)) {
+      shuffledP = [...shuffledP.slice(1), shuffledP[0]];
+    }
+
+    // 2. Shuffle answer choices
+    const rawAnswers = pasangan.map((p) => p.jawaban);
+    let shuffledA = getDeterministicShuffle(rawAnswers, `${seedBase}_a`);
+    if (shuffledA.length > 1 && shuffledA.every((ans, idx) => ans === rawAnswers[idx])) {
+      shuffledA = [...shuffledA.slice(1), shuffledA[0]];
+    }
+
+    // 3. Ensure premis row 0 does NOT equal answerChoice 0 to guarantee they are never side-by-side
+    if (shuffledP.length > 1 && shuffledA.length > 1 && shuffledP[0].jawaban === shuffledA[0]) {
+      const swapped = [...shuffledA];
+      [swapped[0], swapped[1]] = [swapped[1], swapped[0]];
+      shuffledA = swapped;
+    }
+
+    return { premisList: shuffledP, answerChoices: shuffledA };
+  }, [currentSoal.id, pasangan, submissionId]);
+
+  const matchedAnswers: Record<string, string> =
+    typeof currentAnswer === 'object' && currentAnswer !== null ? currentAnswer : {};
+
+  // Find which choice is paired with which premis
+  const getPairedPremisIndex = (choiceText: string) => {
+    for (let i = 0; i < premisList.length; i++) {
+      if (matchedAnswers[premisList[i].id] === choiceText) {
+        return i + 1; // 1-based index
+      }
+    }
+    return null;
+  };
+
+  const handlePair = (premisId: string, choiceText: string) => {
+    const updated = {
+      ...matchedAnswers,
+      [premisId]: choiceText,
+    };
+    updateStudentAnswer(currentSoal.id, updated);
+    // Auto advance selection to next unanswered premis
+    const nextUnanswered = premisList.find((p) => p.id !== premisId && !updated[p.id]);
+    setSelectedPremisId(nextUnanswered ? nextUnanswered.id : null);
+  };
+
+  const handleUnpair = (premisId: string) => {
+    const updated = { ...matchedAnswers };
+    delete updated[premisId];
+    updateStudentAnswer(currentSoal.id, updated);
+  };
+
+  const answeredCount = premisList.filter((p) => !!matchedAnswers[p.id]).length;
+  const isAllAnswered = answeredCount === premisList.length && premisList.length > 0;
+
+  return (
+    <div
+      data-interactive-element="true"
+      data-prevent-swipe="true"
+      className="mt-6 space-y-4 select-none"
+    >
+      {/* Notice & Progress Header */}
+      <div className="p-3.5 bg-indigo-50/90 border border-indigo-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-2xs">
+        <div className="flex items-start sm:items-center gap-2 text-indigo-950 font-medium">
+          <span className="text-base shrink-0">📱</span>
+          <span>
+            <strong>Ramah Layar Sentuh & iPad:</strong> Sentuh <strong>Premis (Kiri)</strong> lalu sentuh <strong>Pilihan Jawaban (Kanan)</strong> untuk memasangkan, atau gunakan tombol <em>+ Pilih Pasangan</em>.
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+          <span
+            className={`px-3 py-1 rounded-full text-xs font-bold ${
+              isAllAnswered
+                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                : 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+            }`}
+          >
+            {answeredCount} / {premisList.length} Terpasang
+          </span>
+
+          <button
+            type="button"
+            onClick={() => setViewMode(viewMode === 'touch' ? 'dropdown' : 'touch')}
+            className="px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-white hover:bg-indigo-100/50 rounded-xl border border-indigo-200 transition cursor-pointer"
+            title="Ganti tampilan interaktif / dropdown biasa"
+          >
+            {viewMode === 'touch' ? 'Mode Dropdown' : 'Mode Sentuh iPad'}
+          </button>
+        </div>
+      </div>
+
+      {/* Main Touch & Interactive 2-Column Matching View */}
+      {viewMode === 'touch' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* Kolom Kiri: Premis */}
+          <div className="lg:col-span-6 space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                <span>1. Kolom Premis / Pernyataan</span>
+              </span>
+              <span className="text-[11px] text-slate-500">Sentuh baris untuk memilih</span>
+            </div>
+
+            <div className="space-y-2.5">
+              {premisList.map((p, pIdx) => {
+                const currentChoice = matchedAnswers[p.id];
+                const isSelected = selectedPremisId === p.id;
+                const chosenOptIndex = currentChoice ? answerChoices.indexOf(currentChoice) : -1;
+                const chosenLetter = chosenOptIndex !== -1 ? String.fromCharCode(65 + chosenOptIndex) : null;
+
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => setSelectedPremisId(p.id)}
+                    className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer relative ${
+                      isSelected
+                        ? 'border-indigo-600 bg-indigo-50/70 shadow-md ring-2 ring-indigo-300'
+                        : currentChoice
+                        ? 'border-emerald-300 bg-emerald-50/30 hover:border-emerald-400'
+                        : 'border-slate-200 bg-white hover:border-indigo-300'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span
+                        className={`w-6 h-6 rounded-lg font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white'
+                            : currentChoice
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-800 text-white'
+                        }`}
+                      >
+                        {pIdx + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs sm:text-sm font-semibold text-slate-900 leading-snug">
+                          {p.premis}
+                        </p>
+
+                        {/* Pasangan yang Terpilih */}
+                        {currentChoice ? (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-200/60">
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white font-bold text-xs shrink-0">
+                              [{chosenLetter}]
+                            </span>
+                            <span className="text-xs font-semibold text-emerald-950 flex-1 truncate">
+                              {currentChoice}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveModalPremis({ id: p.id, premis: p.premis });
+                              }}
+                              className="px-2 py-0.5 rounded-lg text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer"
+                            >
+                              Ubah
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUnpair(p.id);
+                              }}
+                              className="p-1 rounded-lg text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                              title="Hapus pasangan"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="mt-2 flex items-center justify-between pt-2 border-t border-slate-100">
+                            {isSelected ? (
+                              <span className="text-[11px] font-bold text-indigo-700 flex items-center gap-1 animate-pulse">
+                                <span>👉 Sentuh pilihan jawaban di kanan...</span>
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">Belum dipasangkan</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveModalPremis({ id: p.id, premis: p.premis });
+                              }}
+                              className="px-2.5 py-1 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer"
+                            >
+                              + Pilih Pasangan
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Kolom Kanan: Pilihan Jawaban (Diacak) */}
+          <div className="lg:col-span-6 space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                <span>2. Kolom Pilihan Jawaban (Diacak)</span>
+              </span>
+              <span className="text-[11px] text-indigo-600 font-bold">
+                {selectedPremisId
+                  ? 'Sentuh opsi untuk memasangkan ke premis terpilih'
+                  : 'Sentuh opsi langsung untuk memasangkan'}
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {answerChoices.map((choice, cIdx) => {
+                const letter = String.fromCharCode(65 + cIdx);
+                const pairedNo = getPairedPremisIndex(choice);
+                const isTargetSelected = !!selectedPremisId;
+
+                return (
+                  <button
+                    key={cIdx}
+                    type="button"
+                    onClick={() => {
+                      if (selectedPremisId) {
+                        handlePair(selectedPremisId, choice);
+                      } else {
+                        // If no premis is selected, pair with the first available unanswered premis
+                        const firstUnanswered = premisList.find((p) => !matchedAnswers[p.id]);
+                        if (firstUnanswered) {
+                          handlePair(firstUnanswered.id, choice);
+                        } else {
+                          // Prompt user by selecting first premis
+                          setSelectedPremisId(premisList[0]?.id || null);
+                        }
+                      }
+                    }}
+                    className={`w-full text-left p-3.5 rounded-2xl border-2 transition-all flex items-start gap-3 cursor-pointer ${
+                      pairedNo
+                        ? 'border-emerald-300 bg-emerald-50/40 hover:border-emerald-400'
+                        : isTargetSelected
+                        ? 'border-indigo-400 bg-white hover:border-indigo-600 hover:bg-indigo-50/50 shadow-xs ring-1 ring-indigo-200'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <span
+                      className={`w-6 h-6 rounded-lg font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 ${
+                        pairedNo
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-indigo-600 text-white'
+                      }`}
+                    >
+                      {letter}
+                    </span>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-semibold text-slate-900 leading-snug">
+                        {choice}
+                      </p>
+
+                      <div className="mt-1.5 flex items-center justify-between">
+                        {pairedNo ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Terpasang ke Premis No. {pairedNo}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {isTargetSelected ? 'Sentuh untuk pasangkan ke premis aktif' : 'Tersedia'}
+                          </span>
+                        )}
+
+                        <span className="text-[11px] font-bold text-indigo-600">
+                          {pairedNo ? 'Pindahkan ➔' : 'Pasangkan ➔'}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Fallback Dropdown Mode with complete Touch & Blur Protection */
+        <div className="space-y-3">
+          <p className="text-xs font-bold text-slate-700">
+            Pasangkan Setiap Premis Berikut Melalui Pilihan Dropdown:
+          </p>
+          {premisList.map((p, pIdx) => {
+            const currentChoice = matchedAnswers[p.id] || '';
+            const chosenIndex = answerChoices.indexOf(currentChoice);
+            const chosenLetter = chosenIndex !== -1 ? String.fromCharCode(65 + chosenIndex) : null;
+
+            return (
+              <div
+                key={p.id}
+                className={`p-4 rounded-2xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-sm ${
+                  currentChoice ? 'border-indigo-300 bg-indigo-50/30' : 'border-slate-200 bg-white'
+                }`}
+              >
+                <div className="flex items-start gap-2.5 flex-1">
+                  <span className="w-6 h-6 rounded-lg bg-slate-800 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    {pIdx + 1}
+                  </span>
+                  <div className="flex-1 font-semibold text-slate-900 leading-snug">
+                    {p.premis}
+                  </div>
+                </div>
+
+                <div className="sm:w-72 flex items-center gap-2">
+                  <select
+                    data-interactive-element="true"
+                    data-prevent-swipe="true"
+                    value={currentChoice}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      const updated = {
+                        ...matchedAnswers,
+                        [p.id]: e.target.value,
+                      };
+                      updateStudentAnswer(currentSoal.id, updated);
+                    }}
+                    className={`w-full text-xs font-bold px-3 py-2.5 rounded-xl border transition focus:ring-2 focus:ring-indigo-500 cursor-pointer ${
+                      currentChoice
+                        ? 'bg-white border-indigo-400 text-indigo-900 shadow-2xs'
+                        : 'bg-slate-50 border-slate-300 text-slate-600'
+                    }`}
+                  >
+                    <option value="">-- Pilih Pasangan Jawaban --</option>
+                    {answerChoices.map((choice, optIdx) => {
+                      const letter = String.fromCharCode(65 + optIdx);
+                      return (
+                        <option key={optIdx} value={choice}>
+                          [{letter}] {choice}
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  {chosenLetter && (
+                    <span className="px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white font-bold text-xs shrink-0 shadow-2xs">
+                      {chosenLetter}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Touch-Friendly In-App Modal / Bottom Sheet for Option Selection */}
+      {activeModalPremis && (
+        <div
+          data-interactive-element="true"
+          data-prevent-swipe="true"
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setActiveModalPremis(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wide">
+                  Pilih Pasangan Jawaban
+                </span>
+                <h4 className="text-sm font-bold text-slate-900 leading-snug mt-0.5">
+                  {activeModalPremis.premis}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModalPremis(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 space-y-2 pr-1">
+              {answerChoices.map((choice, cIdx) => {
+                const letter = String.fromCharCode(65 + cIdx);
+                const isCurrentlySelected = matchedAnswers[activeModalPremis.id] === choice;
+                const pairedNo = getPairedPremisIndex(choice);
+
+                return (
+                  <button
+                    key={cIdx}
+                    type="button"
+                    onClick={() => {
+                      handlePair(activeModalPremis.id, choice);
+                      setActiveModalPremis(null);
+                    }}
+                    className={`w-full text-left p-3 rounded-2xl border-2 transition flex items-start gap-3 cursor-pointer ${
+                      isCurrentlySelected
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-950 font-bold'
+                        : 'border-slate-200 bg-white hover:border-indigo-400 hover:bg-indigo-50/30 text-slate-800'
+                    }`}
+                  >
+                    <span
+                      className={`w-6 h-6 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 ${
+                        isCurrentlySelected ? 'bg-emerald-600 text-white' : 'bg-indigo-600 text-white'
+                      }`}
+                    >
+                      {letter}
+                    </span>
+                    <div className="flex-1 text-xs sm:text-sm leading-snug">
+                      {choice}
+                      {pairedNo && !isCurrentlySelected && (
+                        <span className="block text-[10px] text-slate-400 mt-0.5">
+                          (Saat ini terpasang di Premis No. {pairedNo})
+                        </span>
+                      )}
+                    </div>
+                    {isCurrentlySelected && (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              {matchedAnswers[activeModalPremis.id] ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleUnpair(activeModalPremis.id);
+                    setActiveModalPremis(null);
+                  }}
+                  className="px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+                >
+                  Hapus Pasangan
+                </button>
+              ) : (
+                <span />
+              )}
+
+              <button
+                type="button"
+                onClick={() => setActiveModalPremis(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
   const {
@@ -86,9 +594,21 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
     submission.status === 'sudah_dikumpulkan' ? submission : null
   );
 
+  // Dedicated termination state for time expiration and 3x violations
+  const [isViolationTerminated, setIsViolationTerminated] = useState(false);
+  const [isTimeExpiredTerminated, setIsTimeExpiredTerminated] = useState(false);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const isSubmittedRef = useRef(isExamCompleted);
   isSubmittedRef.current = isExamCompleted;
+
+  // Immediate protection: if already submitted, prevent re-entry
+  useEffect(() => {
+    if (submission.status === 'sudah_dikumpulkan') {
+      alert(`Peringatan: Anda sudah menyelesaikan dan mengirim jawaban untuk ujian "${exam.judul}". Anda tidak dapat masuk kembali ke ujian yang sama.`);
+      exitExamPlayer();
+    }
+  }, [submission.status, exam.judul, exitExamPlayer]);
 
   const currentSoal: QuestionItem | undefined = exam.soalList[currentIndex];
   const currentAnswerObj = currentSoal ? submission.jawabanMap[currentSoal.id] : undefined;
@@ -112,11 +632,20 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
     // Prevent context menu (right click)
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
+      // On iPad, iPhone, and touch screens, long-press fires contextmenu naturally.
+      // Prevent the default callout bubble without penalizing the touch device as cheating.
+      if (isTouchOrAppleDevice()) {
+        return;
+      }
       triggerCheatingWarning('context_menu', 'Klik kanan (Context Menu) terlarang saat ujian');
     };
 
     // Listen to Fullscreen Change
     const handleFullscreenChange = () => {
+      // iPadOS / iOS does not support HTML5 Fullscreen API for arbitrary DOM elements
+      if (isTouchOrAppleDevice()) {
+        return;
+      }
       if (!document.fullscreenElement && !isSubmittedRef.current) {
         triggerCheatingWarning('exit_fullscreen', 'Siswa keluar dari tampilan layar penuh (Fullscreen)');
       }
@@ -124,16 +653,51 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
 
     // Listen to Tab Switch / Visibility Change
     const handleVisibilityChange = () => {
+      // Tab switch or application switch (universal across desktop, Android, and iPadOS)
       if (document.hidden && !isSubmittedRef.current) {
-        triggerCheatingWarning('tab_switch', 'Siswa berpindah tab browser atau meminimalkan jendela');
+        triggerCheatingWarning('tab_switch', 'Siswa berpindah tab browser atau meminimalkan jendela ujian');
       }
     };
 
     // Listen to Window Blur
-    const handleBlur = () => {
-      if (!isSubmittedRef.current) {
-        triggerCheatingWarning('window_blur', 'Fokus jendela ujian hilang (terdeteksi aplikasi lain aktif)');
+    const handleBlur = (e: FocusEvent) => {
+      if (isSubmittedRef.current) return;
+
+      // 1. If currently interacting with a form element or custom interactive matching component, ignore blur
+      const activeEl = document.activeElement;
+      if (
+        activeEl &&
+        (activeEl.tagName === 'SELECT' ||
+          activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          activeEl.tagName === 'BUTTON' ||
+          activeEl.closest?.('[data-interactive-element="true"]'))
+      ) {
+        return;
       }
+
+      // 2. On iPad / iOS / Touch devices, window.blur fires on native pickers,
+      // virtual keyboards, notification gestures, or control center swipes.
+      // Real app switches / tab switches are already strictly caught via document.hidden in handleVisibilityChange!
+      if (isTouchOrAppleDevice()) {
+        if (document.hidden) {
+          triggerCheatingWarning('tab_switch', 'Siswa berpindah tab browser atau meminimalkan jendela ujian');
+        }
+        return;
+      }
+
+      // 3. For desktop browsers: debounce check to ensure window genuinely lost focus
+      setTimeout(() => {
+        if (!document.hasFocus() && !document.hidden && !isSubmittedRef.current) {
+          const currentActive = document.activeElement;
+          if (
+            !currentActive ||
+            !currentActive.closest?.('select, input, textarea, button, [data-interactive-element="true"]')
+          ) {
+            triggerCheatingWarning('window_blur', 'Fokus jendela ujian hilang (terdeteksi aplikasi lain aktif)');
+          }
+        }
+      }, 200);
     };
 
     // Prevent Key Shortcuts (F11, F12, Escape, Ctrl+C, Ctrl+V, Alt+Tab)
@@ -187,8 +751,35 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
     if (isSubmittedRef.current) return;
 
     recordCheatingViolation(tipe, deskripsi);
-    setViolationCount((c) => c + 1);
+    const newCount = violationCount + 1;
+    setViolationCount(newCount);
     setCheatReason(deskripsi);
+
+    // REQUIREMENT 5: If reaching 3 violations, auto-logout and auto-submit exam
+    if (newCount >= 3) {
+      alarmAudio.stopSiren();
+      setIsCheatAlertOpen(false);
+      setIsViolationTerminated(true);
+
+      try {
+        sessionStorage.setItem('exam_logout_reason', 'cheating_limit');
+      } catch {}
+
+      const result = finishAndSubmitExam();
+      if (result) {
+        setIsExamCompleted(true);
+        setCompletedResult(result);
+      }
+
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+
+      setIsAutoLoggingOut(true);
+      setLogoutCountdown(4);
+      return;
+    }
+
     setIsCheatAlertOpen(true);
     alarmAudio.startSiren();
   };
@@ -219,22 +810,34 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
     return () => clearTimeout(timer);
   }, [isAutoLoggingOut, logoutCountdown, exitExamPlayer, logout]);
 
-  // Touch Swipe Handlers for Android & iPhone (Geser Soal)
+  // Touch Swipe Handlers for Android & iPhone & iPad (Geser Soal)
   const handleTouchStart = (e: React.TouchEvent) => {
+    const target = e.target as HTMLElement;
+    if (target?.closest?.('[data-prevent-swipe="true"], [data-interactive-element="true"], select, input, textarea, button')) {
+      touchStartX.current = null;
+      touchStartY.current = null;
+      return;
+    }
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (touchStartX.current === null || touchStartY.current === null) return;
+    const target = e.target as HTMLElement;
+    if (target?.closest?.('[data-prevent-swipe="true"], [data-interactive-element="true"], select, input, textarea, button')) {
+      touchStartX.current = null;
+      touchStartY.current = null;
+      return;
+    }
     const touchEndX = e.changedTouches[0].clientX;
     const touchEndY = e.changedTouches[0].clientY;
 
     const diffX = touchEndX - touchStartX.current;
     const diffY = touchEndY - touchStartY.current;
 
-    // Minimum swipe threshold 50px horizontal, with minimal vertical deviation
-    if (Math.abs(diffX) > 50 && Math.abs(diffY) < 70) {
+    // Minimum swipe threshold 60px horizontal, with minimal vertical deviation
+    if (Math.abs(diffX) > 60 && Math.abs(diffY) < 60) {
       if (diffX < 0) {
         // Swipe left -> Soal Selanjutnya
         setCurrentIndex((prev) => Math.min(exam.soalList.length - 1, prev + 1));
@@ -247,17 +850,30 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
     touchStartY.current = null;
   };
 
+  // REQUIREMENT 1: When duration ends, auto-submit exam and auto-logout student
   const handleAutoSubmit = () => {
+    if (isSubmittedRef.current) return;
+
+    alarmAudio.stopSiren();
+    setIsCheatAlertOpen(false);
+    setIsTimeExpiredTerminated(true);
+
+    try {
+      sessionStorage.setItem('exam_logout_reason', 'time_expired');
+    } catch {}
+
     const result = finishAndSubmitExam();
     if (result) {
       setIsExamCompleted(true);
       setCompletedResult(result);
-      if (document.fullscreenElement && document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
-      }
-      setIsAutoLoggingOut(true);
-      setLogoutCountdown(3);
     }
+
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+
+    setIsAutoLoggingOut(true);
+    setLogoutCountdown(4);
   };
 
   const handleSubmitExam = () => {
@@ -750,51 +1366,14 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
                   </div>
                 )}
 
-                {/* TYPE 4: MENJODOHKAN / MEMASANGKAN */}
+                {/* TYPE 4: MENJODOHKAN / MEMASANGKAN (DIACAK PREMIS & JAWABANNYA) */}
                 {currentSoal.type === 'menjodohkan' && currentSoal.pasangan && (
-                  <div className="mt-6 space-y-3">
-                    <p className="text-xs text-indigo-700 font-bold bg-indigo-50 p-2.5 rounded-xl border border-indigo-100">
-                      ℹ️ Jodohkan premis di kolom kiri dengan pilihan jawaban yang cocok di kolom kanan.
-                    </p>
-                    <div className="space-y-3">
-                      {currentSoal.pasangan.map((p, pIdx) => {
-                        const matchedAnswers: Record<string, string> =
-                          typeof currentAnswer === 'object' && currentAnswer !== null ? currentAnswer : {};
-                        const currentChoice = matchedAnswers[p.id] || '';
-
-                        return (
-                          <div
-                            key={p.id}
-                            className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-sm"
-                          >
-                            <span className="font-bold text-slate-800 flex-1">
-                              {pIdx + 1}. {p.premis}
-                            </span>
-                            <div className="sm:w-64">
-                              <select
-                                value={currentChoice}
-                                onChange={(e) => {
-                                  const updated = {
-                                    ...matchedAnswers,
-                                    [p.id]: e.target.value,
-                                  };
-                                  updateStudentAnswer(currentSoal.id, updated);
-                                }}
-                                className="w-full text-xs font-semibold px-3 py-2 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                              >
-                                <option value="">-- Pilih Pasangan --</option>
-                                {currentSoal.pasangan?.map((item) => (
-                                  <option key={item.id} value={item.jawaban}>
-                                    {item.jawaban}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <MatchingQuestionPlayer
+                    currentSoal={currentSoal}
+                    currentAnswer={currentAnswer}
+                    submissionId={submission.siswaId || submission.id}
+                    updateStudentAnswer={updateStudentAnswer}
+                  />
                 )}
 
                 {/* TYPE 5: BENAR-SALAH MODEL TKA (1 Deskripsi + 3 Pernyataan) */}
@@ -1077,12 +1656,12 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
             </p>
 
             <p className="mt-3 text-xs text-slate-600 leading-relaxed">
-              Sistem telah mencatat pelanggaran ke-<strong>{violationCount}</strong> beserta waktu kejadian ke dalam <strong>Laporan Hasil Ujian Guru & Administrator</strong>.
+              Sistem telah mencatat pelanggaran ke-<strong>{violationCount}</strong> dari batas toleransi <strong>3 kali</strong>.
             </p>
 
-            <p className="mt-2 text-[11px] text-slate-400">
-              Satu-satunya cara keluar resmi dari ujian adalah melalui tombol <strong>"Kirim Jawaban"</strong>.
-            </p>
+            <div className="mt-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 font-semibold text-left">
+              ⚠️ <strong>PENTING:</strong> Jika terdeteksi melakukan pelanggaran hingga <strong>3 kali</strong>, ujian akan langsung dihentikan secara otomatis, seluruh jawaban otomatis terkirim, dan akun Anda otomatis logout!
+            </div>
 
             <div className="mt-6">
               <button
@@ -1205,42 +1784,126 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
         </div>
       )}
 
-      {/* 7. MODAL AUTO LOGOUT SETELAH KIRIM JAWABAN */}
+      {/* 7. MODAL AUTO LOGOUT SETELAH KIRIM JAWABAN (NORMAL / WAKTU HABIS / PELANGGARAN 3X) */}
       {isAutoLoggingOut && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-7 sm:p-8 text-center shadow-2xl border border-slate-200 animate-in zoom-in-95">
-            <div className="w-20 h-20 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4 border-4 border-emerald-50">
-              <CheckCircle2 className="w-10 h-10" />
-            </div>
-
-            <h3 className="text-xl font-black text-slate-900">
-              Jawaban Berhasil Terkirim!
-            </h3>
-            <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-              Terima kasih, lembar jawaban dan skor Anda untuk <strong>{exam.judul}</strong> telah tersimpan di server.
-            </p>
-
-            <div className="my-5 p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-950">
-              <p className="text-xs font-semibold">
-                Sesi ujian telah selesai. Untuk menjaga keamanan akun siswa, Anda akan otomatis logout dalam:
-              </p>
-              <div className="text-3xl font-black font-mono text-indigo-700 mt-2">
-                {logoutCountdown} <span className="text-sm font-normal text-indigo-500">detik</span>
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          {isViolationTerminated ? (
+            <div className="bg-white rounded-3xl max-w-md w-full p-7 sm:p-8 text-center shadow-2xl border-4 border-rose-600 animate-in zoom-in-95">
+              <div className="w-20 h-20 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4 border-4 border-rose-50">
+                <ShieldAlert className="w-10 h-10 animate-bounce" />
               </div>
-            </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                exitExamPlayer();
-                logout();
-              }}
-              className="w-full py-3.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
-            >
-              <LogOut className="w-4 h-4 text-rose-400" />
-              <span>Logout Sekarang</span>
-            </button>
-          </div>
+              <div className="inline-block px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-[11px] font-black uppercase mb-2">
+                🚨 BATAS 3X PELANGGARAN TERCAPAI 🚨
+              </div>
+
+              <h3 className="text-xl font-black text-slate-900">
+                Ujian Dihentikan & Jawaban Terkirim
+              </h3>
+
+              <p className="mt-2 text-xs font-semibold text-rose-700 bg-rose-50 p-2.5 rounded-xl border border-rose-200">
+                Pelanggaran ke-3: {cheatReason || 'Terdeteksi keluar dari layar ujian/berpindah tab.'}
+              </p>
+
+              <p className="text-xs text-slate-600 mt-2.5 leading-relaxed">
+                Anda telah mencapai batas maksimal <strong>3 kali pelanggaran</strong>. Sesuai aturan CBT, ujian Anda langsung dihentikan dan seluruh lembar jawaban otomatis terkirim ke server guru.
+              </p>
+
+              <div className="my-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-100 text-rose-950">
+                <p className="text-xs font-bold text-slate-700">
+                  Otomatis logout dari sistem dalam:
+                </p>
+                <div className="text-3xl font-black font-mono text-rose-600 mt-1">
+                  {logoutCountdown} <span className="text-sm font-normal text-rose-500">detik</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  exitExamPlayer();
+                  logout();
+                }}
+                className="w-full py-3.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+              >
+                <LogOut className="w-4 h-4 text-white" />
+                <span>Logout Sekarang</span>
+              </button>
+            </div>
+          ) : isTimeExpiredTerminated ? (
+            <div className="bg-white rounded-3xl max-w-md w-full p-7 sm:p-8 text-center shadow-2xl border-4 border-amber-500 animate-in zoom-in-95">
+              <div className="w-20 h-20 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto mb-4 border-4 border-amber-50">
+                <Clock className="w-10 h-10 animate-pulse" />
+              </div>
+
+              <div className="inline-block px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[11px] font-black uppercase mb-2">
+                ⏳ WAKTU PENGERJAAN HABIS ⏳
+              </div>
+
+              <h3 className="text-xl font-black text-slate-900">
+                Jawaban Otomatis Terkirim
+              </h3>
+
+              <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                Durasi waktu pengerjaan untuk <strong>{exam.judul}</strong> telah berakhir. Seluruh jawaban Anda telah tersimpan dan otomatis dikirimkan ke server guru.
+              </p>
+
+              <div className="my-4 p-3.5 rounded-2xl bg-amber-50 border border-amber-100 text-amber-950">
+                <p className="text-xs font-bold text-slate-700">
+                  Otomatis logout dari sistem dalam:
+                </p>
+                <div className="text-3xl font-black font-mono text-amber-600 mt-1">
+                  {logoutCountdown} <span className="text-sm font-normal text-amber-600">detik</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  exitExamPlayer();
+                  logout();
+                }}
+                className="w-full py-3.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+              >
+                <LogOut className="w-4 h-4 text-white" />
+                <span>Logout Sekarang</span>
+              </button>
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl max-w-md w-full p-7 sm:p-8 text-center shadow-2xl border border-slate-200 animate-in zoom-in-95">
+              <div className="w-20 h-20 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4 border-4 border-emerald-50">
+                <CheckCircle2 className="w-10 h-10" />
+              </div>
+
+              <h3 className="text-xl font-black text-slate-900">
+                Jawaban Berhasil Terkirim!
+              </h3>
+              <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                Terima kasih, lembar jawaban dan skor Anda untuk <strong>{exam.judul}</strong> telah tersimpan di server.
+              </p>
+
+              <div className="my-5 p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-950">
+                <p className="text-xs font-semibold">
+                  Sesi ujian telah selesai. Untuk menjaga keamanan akun siswa, Anda akan otomatis logout dalam:
+                </p>
+                <div className="text-3xl font-black font-mono text-indigo-700 mt-2">
+                  {logoutCountdown} <span className="text-sm font-normal text-indigo-500">detik</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  exitExamPlayer();
+                  logout();
+                }}
+                className="w-full py-3.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+              >
+                <LogOut className="w-4 h-4 text-rose-400" />
+                <span>Logout Sekarang</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

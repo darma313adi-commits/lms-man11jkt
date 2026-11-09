@@ -88,6 +88,19 @@ export const LoginView: React.FC = () => {
         setPassword(matched.password);
       }
     }
+
+    // Check if redirected due to automatic exam logout (time expired or 3x violation)
+    try {
+      const logoutReason = sessionStorage.getItem('exam_logout_reason');
+      if (logoutReason) {
+        sessionStorage.removeItem('exam_logout_reason');
+        if (logoutReason === 'time_expired') {
+          setErrorMsg('Waktu pengerjaan ujian telah habis. Seluruh jawaban Anda telah otomatis tersimpan dan dikirimkan ke server. Anda telah logout otomatis.');
+        } else if (logoutReason === 'cheating_limit') {
+          setErrorMsg('Peringatan: Ujian dihentikan karena terdeteksi mencapai batas maksimal 3 kali pelanggaran. Seluruh lembar jawaban Anda telah otomatis dikirimkan ke guru pengampu dan akun Anda telah logout.');
+        }
+      }
+    } catch {}
   }, [users]);
 
   const selectPortal = (role: 'admin' | 'guru' | 'siswa' | 'kepala_madrasah') => {
@@ -302,15 +315,18 @@ export const LoginView: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={backToPortalSelect}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
-                title="Pilih peran portal lain"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Ganti Portal</span>
-              </button>
+              {/* Tombol Ganti Portal (Dihilangkan untuk Siswa) */}
+              {activePortal !== 'siswa' && (
+                <button
+                  type="button"
+                  onClick={backToPortalSelect}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+                  title="Pilih peran portal lain"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Ganti Portal</span>
+                </button>
+              )}
             </div>
 
             {/* Error Banner */}
@@ -438,35 +454,37 @@ export const LoginView: React.FC = () => {
               )}
             </div>
 
-            {/* Public Link Share Box for this Role */}
-            <div className="mt-4 p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700">
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1">
-                  <Globe className="w-3 h-3 text-emerald-600" />
-                  Tautan Publik Khusus Portal {activePortal === 'siswa' ? 'Siswa' : activePortal === 'guru' ? 'Guru' : 'Admin'}:
-                </span>
-                <button
-                  type="button"
-                  onClick={() => copyToClipboard(`link_${activePortal}`, currentPublicLink)}
-                  className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-200 cursor-pointer shadow-2xs"
-                >
-                  {copiedLink === `link_${activePortal}` ? (
-                    <>
-                      <Check className="w-3 h-3 text-emerald-600" />
-                      <span>Tersalin!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3" />
-                      <span>Salin Link</span>
-                    </>
-                  )}
-                </button>
+            {/* Public Link Share Box for this Role (Dihilangkan untuk Portal Siswa) */}
+            {activePortal !== 'siswa' && (
+              <div className="mt-4 p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1">
+                    <Globe className="w-3 h-3 text-emerald-600" />
+                    Tautan Publik Khusus Portal {activePortal === 'guru' ? 'Guru' : activePortal === 'kepala_madrasah' ? 'Kepala Madrasah' : 'Admin'}:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(`link_${activePortal}`, currentPublicLink)}
+                    className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-200 cursor-pointer shadow-2xs"
+                  >
+                    {copiedLink === `link_${activePortal}` ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-600" />
+                        <span>Tersalin!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Salin Link</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="font-mono text-[10px] text-emerald-950 bg-white p-1.5 rounded border border-slate-200 truncate select-all">
+                  {currentPublicLink}
+                </p>
               </div>
-              <p className="font-mono text-[10px] text-emerald-950 bg-white p-1.5 rounded border border-slate-200 truncate select-all">
-                {currentPublicLink}
-              </p>
-            </div>
+            )}
           </div>
         )}
       </div>

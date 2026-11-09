@@ -429,8 +429,8 @@ export const DaftarSiswaPerKelas: React.FC = () => {
                                 {sub.mataPelajaran}
                               </span>
                               <h4 className="font-bold text-slate-900 text-sm mt-1">{sub.examJudul}</h4>
-                              <p className="text-[11px] text-slate-500">
-                                Waktu Selesai: {sub.waktuSelesai ? new Date(sub.waktuSelesai).toLocaleString('id-ID') : '-'}
+                              <p className="text-[11px] text-slate-500 font-mono">
+                                Jam Login: {sub.waktuMulai ? new Date(sub.waktuMulai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'} • Jam Kirim: {sub.waktuSelesai ? new Date(sub.waktuSelesai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
                               </p>
                             </div>
                             <div className="text-right">

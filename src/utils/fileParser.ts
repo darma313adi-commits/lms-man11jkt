@@ -548,8 +548,8 @@ export function exportGradesExcel(submissions: ExamSubmission[], exam: Exam, cla
       'Status Kelulusan': isLulus ? 'TUNTAS' : 'REMIDI',
       'Pelanggaran Curang': sub.violations?.length || 0,
       'Status Pengerjaan': sub.status === 'sudah_dikumpulkan' ? 'Selesai' : 'Sedang Mengerjakan',
-      'Waktu Mulai': sub.waktuMulai ? new Date(sub.waktuMulai).toLocaleTimeString('id-ID') : '-',
-      'Waktu Selesai': sub.waktuSelesai ? new Date(sub.waktuSelesai).toLocaleTimeString('id-ID') : '-',
+      'Jam Login': sub.waktuMulai ? new Date(sub.waktuMulai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-',
+      'Jam Kirim Jawaban': sub.waktuSelesai ? new Date(sub.waktuSelesai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-',
     };
   });
 

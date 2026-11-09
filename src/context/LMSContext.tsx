@@ -1190,6 +1190,15 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const startExamSession = (exam: Exam, siswa: User): ExamSubmission => {
+    // Check if student already submitted this exam
+    const alreadySubmitted = submissions.find(
+      (s) => s.examId === exam.id && s.siswaId === siswa.id && s.status === 'sudah_dikumpulkan'
+    );
+    if (alreadySubmitted) {
+      alert(`Peringatan: Anda sudah menyelesaikan dan mengirim jawaban untuk ujian "${exam.judul}". Anda tidak dapat login kembali pada ujian yang sama.`);
+      return alreadySubmitted;
+    }
+
     const existing = submissions.find(
       (s) => s.examId === exam.id && s.siswaId === siswa.id && s.status === 'sedang_mengerjakan'
     );

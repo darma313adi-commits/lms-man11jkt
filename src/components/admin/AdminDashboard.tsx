@@ -37,6 +37,8 @@ import {
   RotateCcw,
   X,
   ShieldAlert,
+  EyeOff,
+  ArrowUpDown,
 } from 'lucide-react';
 import {
   parseExcelUsers,
@@ -96,6 +98,10 @@ export const AdminDashboard: React.FC = () => {
   const [selectedMaterialForView, setSelectedMaterialForView] = useState<LessonMaterial | null>(null);
   const [selectedExamForParticipants, setSelectedExamForParticipants] = useState<Exam | null>(null);
   const [adminParticipantClassFilter, setAdminParticipantClassFilter] = useState<string>('all');
+  const [adminRekapSortBy, setAdminRekapSortBy] = useState<
+    'nama_asc' | 'nama_desc' | 'nilai_desc' | 'nilai_asc' | 'waktu_login_desc' | 'waktu_login_asc' | 'waktu_kirim_desc'
+  >('nama_asc');
+  const [isAdminScoresBlurred, setIsAdminScoresBlurred] = useState<boolean>(false);
 
   // Filters for Monitoring Asesmen Guru
   const [examSearch, setExamSearch] = useState('');
@@ -1946,6 +1952,27 @@ export const AdminDashboard: React.FC = () => {
                   adminParticipantClassFilter.trim().toLowerCase()
               );
 
+        const sortedFilteredSubs = [...filteredSubs].sort((a, b) => {
+          switch (adminRekapSortBy) {
+            case 'nama_asc':
+              return a.siswaNama.localeCompare(b.siswaNama, 'id-ID');
+            case 'nama_desc':
+              return b.siswaNama.localeCompare(a.siswaNama, 'id-ID');
+            case 'nilai_desc':
+              return (b.nilai100 ?? 0) - (a.nilai100 ?? 0);
+            case 'nilai_asc':
+              return (a.nilai100 ?? 0) - (b.nilai100 ?? 0);
+            case 'waktu_login_desc':
+              return new Date(b.waktuMulai || 0).getTime() - new Date(a.waktuMulai || 0).getTime();
+            case 'waktu_login_asc':
+              return new Date(a.waktuMulai || 0).getTime() - new Date(b.waktuMulai || 0).getTime();
+            case 'waktu_kirim_desc':
+              return new Date(b.waktuSelesai || 0).getTime() - new Date(a.waktuSelesai || 0).getTime();
+            default:
+              return 0;
+          }
+        });
+
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl max-w-5xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6 flex flex-col max-h-[90vh]">
@@ -1983,222 +2010,293 @@ export const AdminDashboard: React.FC = () => {
                 </button>
               </div>
 
-              {/* Toolbar: Filter Kelas, Unduh Excel, Unduh PDF, Unduh Soal, Reset Per Kelas */}
-              <div className="p-4 sm:p-5 bg-slate-50 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 shadow-2xs">
-                    <span className="text-xs font-bold text-slate-600">Filter Kelas:</span>
-                    <select
-                      value={adminParticipantClassFilter}
-                      onChange={(e) => setAdminParticipantClassFilter(e.target.value)}
-                      className="text-xs font-bold text-slate-900 bg-transparent focus:outline-hidden cursor-pointer"
-                    >
-                      <option value="all">Semua Kelas ({examSubs.length} Siswa)</option>
-                      {availableClasses.map((cls) => {
-                        const count = examSubs.filter(
-                          (s) => (s.siswaKelas || '').trim().toLowerCase() === cls.trim().toLowerCase()
-                        ).length;
-                        return (
-                          <option key={cls} value={cls}>
-                            Kelas {cls} ({count} siswa)
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
+              {/* Toolbar: Filter Kelas, Urutkan, Blur Nilai, Unduh Excel, Unduh PDF, Unduh Soal, Reset Per Kelas */}
+              <div className="p-4 sm:p-5 bg-slate-50 border-b border-slate-200 flex flex-col gap-3">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                          {/* Filter / Pilih Kelas */}
+                          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 shadow-2xs">
+                            <span className="text-xs font-bold text-slate-600">Pilih Kelas:</span>
+                            <select
+                              value={adminParticipantClassFilter}
+                              onChange={(e) => setAdminParticipantClassFilter(e.target.value)}
+                              className="text-xs font-bold text-slate-900 bg-transparent focus:outline-hidden cursor-pointer"
+                            >
+                              <option value="all">Semua Kelas ({examSubs.length} Siswa)</option>
+                              {availableClasses.map((cls) => {
+                                const count = examSubs.filter(
+                                  (s) => (s.siswaKelas || '').trim().toLowerCase() === cls.trim().toLowerCase()
+                                ).length;
+                                return (
+                                  <option key={cls} value={cls}>
+                                    Kelas {cls} ({count} siswa)
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
 
-                  <span className="text-xs font-semibold text-slate-500">
-                    Menampilkan <strong>{filteredSubs.length}</strong> lembar jawaban
-                  </span>
-                </div>
+                          {/* Urutkan Peserta */}
+                          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 shadow-2xs">
+                            <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="text-xs font-bold text-slate-600">Urutkan:</span>
+                            <select
+                              value={adminRekapSortBy}
+                              onChange={(e) => setAdminRekapSortBy(e.target.value as any)}
+                              className="text-xs font-bold text-slate-900 bg-transparent focus:outline-hidden cursor-pointer"
+                            >
+                              <option value="nama_asc">Nama Lengkap (A → Z)</option>
+                              <option value="nama_desc">Nama Lengkap (Z → A)</option>
+                              <option value="nilai_desc">Nilai / Skor Tertinggi (100 → 0)</option>
+                              <option value="nilai_asc">Nilai / Skor Terendah (0 → 100)</option>
+                              <option value="waktu_login_desc">Waktu Login / Mulai (Terbaru)</option>
+                              <option value="waktu_login_asc">Waktu Login / Mulai (Terlama)</option>
+                              <option value="waktu_kirim_desc">Waktu Kirim / Selesai (Terbaru)</option>
+                            </select>
+                          </div>
 
-                {/* Action Buttons */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* Unduh Excel Nilai */}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      exportGradesExcel(
-                        examSubs,
-                        selectedExamForParticipants,
-                        adminParticipantClassFilter === 'all' ? undefined : adminParticipantClassFilter
-                      )
-                    }
-                    disabled={filteredSubs.length === 0}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
-                    title="Unduh Rekap Nilai Siswa ke Excel (.xlsx)"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>
-                      {adminParticipantClassFilter === 'all'
-                        ? 'Unduh Excel (.xlsx)'
-                        : `Unduh Excel Kelas ${adminParticipantClassFilter}`}
-                    </span>
-                  </button>
+                          {/* Tombol Blur Skor & Nilai */}
+                          <button
+                            type="button"
+                            onClick={() => setIsAdminScoresBlurred(!isAdminScoresBlurred)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs border transition cursor-pointer shadow-2xs ${
+                              isAdminScoresBlurred
+                                ? 'bg-amber-100 text-amber-900 border-amber-300 ring-2 ring-amber-400/30'
+                                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
+                            }`}
+                            title="Sembunyikan / Blur skor dan nilai siswa demi menjaga privasi saat layar ditampilkan di kelas"
+                          >
+                            {isAdminScoresBlurred ? (
+                              <EyeOff className="w-4 h-4 text-amber-700" />
+                            ) : (
+                              <Eye className="w-4 h-4 text-slate-600" />
+                            )}
+                            <span>{isAdminScoresBlurred ? 'Nilai Disensor (Blur Aktif)' : 'Blur Skor & Nilai'}</span>
+                          </button>
+                        </div>
 
-                  {/* Unduh Laporan Nilai PDF */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const kamad = users.find((u) => u.role === 'kepala_madrasah');
-                      const examGuru = users.find((u) => u.id === selectedExamForParticipants.guruId);
-                      exportGradesPdf({
-                        exam: selectedExamForParticipants,
-                        submissions: filteredSubs,
-                        allStudentsInClass: users.filter((u) => u.role === 'siswa'),
-                        kelasName:
-                          adminParticipantClassFilter === 'all'
-                            ? selectedExamForParticipants.kelasTarget[0] || 'Semua Kelas'
-                            : adminParticipantClassFilter,
-                        guruName: selectedExamForParticipants.guruNama || 'Guru Pengampu',
-                        guruNip: examGuru?.nip,
-                        kamadName: kamad?.name,
-                        kamadNip: kamad?.nip,
-                      });
-                    }}
-                    disabled={filteredSubs.length === 0}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
-                    title="Unduh Laporan Nilai Resmi Format PDF"
-                  >
-                    <FileText className="w-4 h-4" />
-                    <span>Laporan Nilai (PDF)</span>
-                  </button>
+                        <span className="text-xs font-semibold text-slate-500">
+                          Menampilkan <strong>{sortedFilteredSubs.length}</strong> lembar jawaban
+                        </span>
+                      </div>
 
-                  {/* Unduh Naskah Soal PDF */}
-                  <button
-                    type="button"
-                    onClick={() => exportExamPdf(selectedExamForParticipants, { includeAnswerKey: false })}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs shadow-xs transition cursor-pointer"
-                    title="Unduh Naskah Soal Ujian Format PDF"
-                  >
-                    <Download className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Unduh Soal (PDF)</span>
-                  </button>
+                      {/* Action Buttons: Unduh Hasil Excel & PDF per Kelas */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-bold text-slate-600 mr-1">Unduh Hasil:</span>
 
-                  {/* Cetak Soal */}
-                  <button
-                    type="button"
-                    onClick={() => printExamDirectly(selectedExamForParticipants, { includeAnswerKey: false })}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs shadow-xs transition cursor-pointer"
-                    title="Cetak Naskah Soal"
-                  >
-                    <Printer className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Cetak Soal</span>
-                  </button>
+                          {/* Unduh Excel Nilai */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              exportGradesExcel(
+                                examSubs,
+                                selectedExamForParticipants,
+                                adminParticipantClassFilter === 'all' ? undefined : adminParticipantClassFilter
+                              )
+                            }
+                            disabled={sortedFilteredSubs.length === 0}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
+                            title={
+                              adminParticipantClassFilter === 'all'
+                                ? 'Unduh Rekap Nilai Siswa ke Excel (.xlsx) untuk Semua Kelas'
+                                : `Unduh Rekap Nilai Siswa ke Excel (.xlsx) untuk Kelas ${adminParticipantClassFilter}`
+                            }
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>
+                              {adminParticipantClassFilter === 'all'
+                                ? 'Unduh Excel (Semua Kelas)'
+                                : `Unduh Excel (Kelas ${adminParticipantClassFilter})`}
+                            </span>
+                          </button>
 
-                  {/* Reset Ujian Per Kelas */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (adminParticipantClassFilter === 'all') {
-                        alert(
-                          'Untuk melakukan Reset Per Kelas, silakan pilih salah satu kelas terlebih dahulu pada Filter Kelas.'
-                        );
-                        return;
-                      }
-                      const countInClass = examSubs.filter(
-                        (s) =>
-                          (s.siswaKelas || '').trim().toLowerCase() ===
-                          adminParticipantClassFilter.trim().toLowerCase()
-                      ).length;
+                          {/* Unduh Laporan Nilai PDF */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const kamad = users.find((u) => u.role === 'kepala_madrasah');
+                              const examGuru = users.find((u) => u.id === selectedExamForParticipants.guruId);
+                              exportGradesPdf({
+                                exam: selectedExamForParticipants,
+                                submissions: sortedFilteredSubs,
+                                allStudentsInClass: users.filter((u) => u.role === 'siswa'),
+                                kelasName:
+                                  adminParticipantClassFilter === 'all'
+                                    ? selectedExamForParticipants.kelasTarget[0] || 'Semua Kelas'
+                                    : adminParticipantClassFilter,
+                                guruName: selectedExamForParticipants.guruNama || 'Guru Pengampu',
+                                guruNip: examGuru?.nip,
+                                kamadName: kamad?.name,
+                                kamadNip: kamad?.nip,
+                              });
+                            }}
+                            disabled={sortedFilteredSubs.length === 0}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
+                            title={
+                              adminParticipantClassFilter === 'all'
+                                ? 'Unduh Laporan Nilai Resmi Format PDF untuk Semua Kelas'
+                                : `Unduh Laporan Nilai Resmi Format PDF untuk Kelas ${adminParticipantClassFilter}`
+                            }
+                          >
+                            <FileText className="w-4 h-4" />
+                            <span>
+                              {adminParticipantClassFilter === 'all'
+                                ? 'Laporan PDF (Semua Kelas)'
+                                : `Laporan PDF (Kelas ${adminParticipantClassFilter})`}
+                            </span>
+                          </button>
 
-                      if (countInClass === 0) {
-                        alert(
-                          `Belum ada siswa di kelas "${adminParticipantClassFilter}" yang mengumpulkan jawaban ujian ini.`
-                        );
-                        return;
-                      }
+                          {/* Unduh Naskah Soal PDF */}
+                          <button
+                            type="button"
+                            onClick={() => exportExamPdf(selectedExamForParticipants, { includeAnswerKey: false })}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs shadow-xs transition cursor-pointer"
+                            title="Unduh Naskah Soal Ujian Format PDF"
+                          >
+                            <Download className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Unduh Soal (PDF)</span>
+                          </button>
 
-                      if (
-                        confirm(
-                          `PERINGATAN RESET KELAS!\n\nApakah Anda yakin ingin mereset ujian seluruh siswa di kelas "${adminParticipantClassFilter}" (${countInClass} siswa)?\n\nSemua lembar jawaban dan skor siswa kelas ${adminParticipantClassFilter} pada ujian "${selectedExamForParticipants.judul}" akan dihapus dari server Firestore. Siswa dapat login kembali dan mengulang ujian.`
-                        )
-                      ) {
-                        resetExamParticipantsByClass(
-                          selectedExamForParticipants.id,
-                          adminParticipantClassFilter
-                        );
-                        alert(
-                          `Ujian seluruh siswa kelas "${adminParticipantClassFilter}" berhasil direset.`
-                        );
-                      }
-                    }}
-                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs transition cursor-pointer shadow-xs ${
-                      adminParticipantClassFilter === 'all'
-                        ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                        : 'bg-rose-600 hover:bg-rose-700 text-white'
-                    }`}
-                    title={
-                      adminParticipantClassFilter === 'all'
-                        ? 'Pilih kelas tertentu terlebih dahulu untuk mereset ujian per kelas'
-                        : `Reset ujian seluruh siswa kelas ${adminParticipantClassFilter}`
-                    }
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>
-                      {adminParticipantClassFilter === 'all'
-                        ? 'Reset Per Kelas'
-                        : `Reset Kelas ${adminParticipantClassFilter}`}
-                    </span>
-                  </button>
-                </div>
-              </div>
+                          {/* Cetak Soal */}
+                          <button
+                            type="button"
+                            onClick={() => printExamDirectly(selectedExamForParticipants, { includeAnswerKey: false })}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs shadow-xs transition cursor-pointer"
+                            title="Cetak Naskah Soal"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-slate-600" />
+                            <span>Cetak Soal</span>
+                          </button>
+                        </div>
 
-              {/* Table of Submissions */}
-              <div className="flex-1 overflow-auto p-4 sm:p-5">
-                <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-                  <thead className="bg-slate-50 font-bold text-slate-700">
-                    <tr>
-                      <th className="px-3 py-2.5">No</th>
-                      <th className="px-3 py-2.5">Nama Siswa</th>
-                      <th className="px-3 py-2.5">Kelas</th>
-                      <th className="px-3 py-2.5">Skor</th>
-                      <th className="px-3 py-2.5">Nilai (/100)</th>
-                      <th className="px-3 py-2.5">Status</th>
-                      <th className="px-3 py-2.5">Pelanggaran</th>
-                      <th className="px-3 py-2.5 text-right">Aksi Reset</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {filteredSubs.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="px-3 py-8 text-center text-slate-400">
-                          {adminParticipantClassFilter === 'all'
-                            ? 'Belum ada siswa yang mengumpulkan jawaban ujian ini.'
-                            : `Belum ada siswa dari kelas ${adminParticipantClassFilter} yang mengumpulkan jawaban.`}
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredSubs.map((sub, idx) => {
-                        const isPassed = sub.nilai100 >= selectedExamForParticipants.kkm;
-                        const violationCount = sub.violations?.length || 0;
-                        return (
-                          <tr key={sub.id} className="hover:bg-slate-50 transition">
-                            <td className="px-3 py-2.5 font-mono text-slate-400">{idx + 1}</td>
-                            <td className="px-3 py-2.5 font-semibold text-slate-900">
-                              <div>{sub.siswaNama}</div>
-                              <div className="text-[10px] text-slate-400 font-mono">NISN: {sub.siswaNisn}</div>
-                            </td>
-                            <td className="px-3 py-2.5">
-                              <span className="px-2 py-0.5 rounded bg-slate-100 font-bold text-[11px] text-slate-700">
-                                {sub.siswaKelas}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2.5 font-mono font-semibold text-slate-700">
-                              {sub.totalSkor} / {sub.maxSkor}
-                            </td>
-                            <td className="px-3 py-2.5">
-                              <span className="text-sm font-black text-indigo-700 font-mono">{sub.nilai100}</span>
-                              <span className="text-slate-400 text-[10px]"> / 100</span>
-                            </td>
-                            <td className="px-3 py-2.5">
-                              <span
-                                className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
-                                  isPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                                }`}
-                              >
-                                {isPassed ? 'TUNTAS' : 'REMIDI'}
-                              </span>
+                        {/* Reset Ujian Per Kelas */}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (adminParticipantClassFilter === 'all') {
+                                alert(
+                                  'Untuk melakukan Reset Per Kelas, silakan pilih salah satu kelas terlebih dahulu pada Filter Kelas.'
+                                );
+                                return;
+                              }
+                              const countInClass = examSubs.filter(
+                                (s) =>
+                                  (s.siswaKelas || '').trim().toLowerCase() ===
+                                  adminParticipantClassFilter.trim().toLowerCase()
+                              ).length;
+
+                              if (countInClass === 0) {
+                                alert(
+                                  `Belum ada siswa di kelas "${adminParticipantClassFilter}" yang mengumpulkan jawaban ujian ini.`
+                                );
+                                return;
+                              }
+
+                              if (
+                                confirm(
+                                  `PERINGATAN RESET KELAS!\n\nApakah Anda yakin ingin mereset ujian seluruh siswa di kelas "${adminParticipantClassFilter}" (${countInClass} siswa)?\n\nSemua lembar jawaban dan skor siswa kelas ${adminParticipantClassFilter} pada ujian "${selectedExamForParticipants.judul}" akan dihapus dari server Firestore. Siswa dapat login kembali dan mengulang ujian.`
+                                )
+                              ) {
+                                resetExamParticipantsByClass(
+                                  selectedExamForParticipants.id,
+                                  adminParticipantClassFilter
+                                );
+                                alert(
+                                  `Ujian seluruh siswa kelas "${adminParticipantClassFilter}" berhasil direset.`
+                                );
+                              }
+                            }}
+                            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs transition cursor-pointer shadow-xs ${
+                              adminParticipantClassFilter === 'all'
+                                ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                                : 'bg-rose-600 hover:bg-rose-700 text-white'
+                            }`}
+                            title={
+                              adminParticipantClassFilter === 'all'
+                                ? 'Pilih kelas tertentu terlebih dahulu untuk mereset ujian per kelas'
+                                : `Reset ujian seluruh siswa kelas ${adminParticipantClassFilter}`
+                            }
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                            <span>
+                              {adminParticipantClassFilter === 'all'
+                                ? 'Reset Per Kelas'
+                                : `Reset Kelas ${adminParticipantClassFilter}`}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Table of Submissions */}
+                    <div className="flex-1 overflow-auto p-4 sm:p-5">
+                      <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+                        <thead className="bg-slate-50 font-bold text-slate-700">
+                          <tr>
+                            <th className="px-3 py-2.5">No</th>
+                            <th className="px-3 py-2.5">Nama Siswa</th>
+                            <th className="px-3 py-2.5">Kelas</th>
+                            <th className="px-3 py-2.5">Skor</th>
+                            <th className="px-3 py-2.5">Nilai (/100)</th>
+                            <th className="px-3 py-2.5">Status</th>
+                            <th className="px-3 py-2.5">Pelanggaran</th>
+                            <th className="px-3 py-2.5">Jam Login</th>
+                            <th className="px-3 py-2.5">Jam Kirim</th>
+                            <th className="px-3 py-2.5 text-right">Aksi Reset</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {sortedFilteredSubs.length === 0 ? (
+                            <tr>
+                              <td colSpan={10} className="px-3 py-8 text-center text-slate-400">
+                                {adminParticipantClassFilter === 'all'
+                                  ? 'Belum ada siswa yang mengumpulkan jawaban ujian ini.'
+                                  : `Belum ada siswa dari kelas ${adminParticipantClassFilter} yang mengumpulkan jawaban.`}
+                              </td>
+                            </tr>
+                          ) : (
+                            sortedFilteredSubs.map((sub, idx) => {
+                              const isPassed = sub.nilai100 >= selectedExamForParticipants.kkm;
+                              const violationCount = sub.violations?.length || 0;
+                              return (
+                                <tr key={sub.id} className="hover:bg-slate-50 transition">
+                                  <td className="px-3 py-2.5 font-mono text-slate-400">{idx + 1}</td>
+                                  <td className="px-3 py-2.5 font-semibold text-slate-900">
+                                    <div>{sub.siswaNama}</div>
+                                    <div className="text-[10px] text-slate-400 font-mono">NISN: {sub.siswaNisn}</div>
+                                  </td>
+                                  <td className="px-3 py-2.5">
+                                    <span className="px-2 py-0.5 rounded bg-slate-100 font-bold text-[11px] text-slate-700">
+                                      {sub.siswaKelas}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2.5 font-mono font-semibold text-slate-700">
+                                    <span className={isAdminScoresBlurred ? 'filter blur-xs select-none transition-all duration-200' : ''}>
+                                      {isAdminScoresBlurred ? '••• / •••' : `${sub.totalSkor} / ${sub.maxSkor}`}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2.5">
+                                    <span
+                                      className={`text-sm font-black text-indigo-700 font-mono ${
+                                        isAdminScoresBlurred ? 'filter blur-xs select-none transition-all duration-200' : ''
+                                      }`}
+                                    >
+                                      {isAdminScoresBlurred ? '•••' : sub.nilai100}
+                                    </span>
+                                    <span className="text-slate-400 text-[10px]"> / 100</span>
+                                  </td>
+                                  <td className="px-3 py-2.5">
+                                    <span
+                                      className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                                        isAdminScoresBlurred ? 'filter blur-xs select-none' : ''
+                                      } ${
+                                        isPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                                      }`}
+                                    >
+                                      {isAdminScoresBlurred ? '••••' : isPassed ? 'TUNTAS' : 'REMIDI'}
+                                    </span>
                             </td>
                             <td className="px-3 py-2.5">
                               {violationCount > 0 ? (
@@ -2209,6 +2307,12 @@ export const AdminDashboard: React.FC = () => {
                               ) : (
                                 <span className="text-emerald-600 font-bold text-[11px]">Bersih (0)</span>
                               )}
+                            </td>
+                            <td className="px-3 py-2.5 font-mono text-[11px] text-slate-700 whitespace-nowrap">
+                              {sub.waktuMulai ? new Date(sub.waktuMulai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
+                            </td>
+                            <td className="px-3 py-2.5 font-mono text-[11px] text-emerald-700 font-bold whitespace-nowrap">
+                              {sub.waktuSelesai ? new Date(sub.waktuSelesai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
                             </td>
                             <td className="px-3 py-2.5 text-right">
                               <button
