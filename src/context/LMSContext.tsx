@@ -25,6 +25,7 @@ import { validatePasswordChange } from '../utils/authUtils';
 import {
   collection,
   doc,
+  getDocs,
   setDoc,
   deleteDoc,
   onSnapshot,
@@ -44,7 +45,7 @@ interface LMSContextType {
   activeExam: Exam | null;
   activeSubmission: ExamSubmission | null;
   isCloudSynced: boolean;
-  login: (username: string, password: string) => { success: boolean; message?: string };
+  login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   switchUser: (user: User) => void;
   addUser: (user: Omit<User, 'id' | 'createdAt'>) => void;
@@ -590,29 +591,78 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, []);
 
-  const login = (username: string, password: string) => {
+  const login = async (
+    username: string,
+    password: string
+  ): Promise<{ success: boolean; message?: string }> => {
     const trimmedUser = username.trim().toLowerCase();
+    const cleanUserDigits = trimmedUser.replace(/\D/g, '');
     const trimmedPass = password.trim();
 
-    // Check special admin requirement #11: darma313adi / masdar313 & any registered user (by username, email, nip, nisn)
-    const foundUser = users.find(
-      (u) =>
-        (u.username.toLowerCase() === trimmedUser ||
-          u.email?.toLowerCase() === trimmedUser ||
-          u.nip?.toLowerCase() === trimmedUser ||
-          u.nisn?.toLowerCase() === trimmedUser) &&
-        u.password === trimmedPass
-    );
+    const matchUser = (u: User) => {
+      const userUname = (u.username || '').toLowerCase();
+      const userEmail = (u.email || '').toLowerCase();
+      const userNip = (u.nip || '').toLowerCase();
+      const userNipDigits = u.nip ? u.nip.replace(/\D/g, '') : '';
+      const userNisn = (u.nisn || '').toLowerCase();
+      const userNisnDigits = u.nisn ? u.nisn.replace(/\D/g, '') : '';
+
+      const isUsernameMatch =
+        userUname === trimmedUser ||
+        userEmail === trimmedUser ||
+        userNip === trimmedUser ||
+        userNisn === trimmedUser ||
+        (cleanUserDigits.length >= 6 &&
+          (userNipDigits === cleanUserDigits || userNisnDigits === cleanUserDigits));
+
+      return isUsernameMatch && u.password === trimmedPass;
+    };
+
+    let foundUser = users.find(matchUser);
+
+    // If not found in local memory (e.g. freshly opened browser on another laptop/device where Firestore onSnapshot is still syncing),
+    // fetch collection('users') directly from Cloud Firestore to guarantee cross-device login works immediately!
+    if (!foundUser) {
+      try {
+        const usersSnap = await getDocs(collection(db, 'users'));
+        if (!usersSnap.empty) {
+          const freshUsers: User[] = [];
+          usersSnap.forEach((d) => {
+            freshUsers.push({ id: d.id, ...(d.data() as any) });
+          });
+
+          if (freshUsers.length > 0) {
+            setUsers((prev) => {
+              const map = new Map<string, User>();
+              prev.forEach((u) => map.set(u.id, u));
+              freshUsers.forEach((u) => map.set(u.id, u));
+              const merged = Array.from(map.values());
+              try {
+                localStorage.setItem('man11_lms_users', JSON.stringify(merged));
+              } catch {}
+              return merged;
+            });
+
+            foundUser = freshUsers.find(matchUser);
+          }
+        }
+      } catch (err) {
+        console.warn('Direct Firestore fetch during login fallback error:', err);
+      }
+    }
 
     if (foundUser) {
       if (foundUser.status === 'nonaktif') {
         return { success: false, message: 'Akun Anda dinonaktifkan oleh administrator.' };
       }
       setCurrentUser(foundUser);
+      try {
+        localStorage.setItem('man11_lms_user', JSON.stringify(foundUser));
+      } catch {}
       return { success: true };
     }
 
-    return { success: false, message: 'Username atau password salah! Silakan periksa kembali.' };
+    return { success: false, message: 'Username/NIP/Email atau password salah! Silakan periksa kembali.' };
   };
 
   const logout = () => {

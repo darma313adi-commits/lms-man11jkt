@@ -142,18 +142,21 @@ export const LoginView: React.FC = () => {
     window.history.pushState({ path: newUrl }, '', newUrl);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setLoading(true);
 
-    setTimeout(() => {
-      const result = login(username, password);
-      setLoading(false);
+    try {
+      const result = await login(username, password);
       if (!result.success) {
         setErrorMsg(result.message || 'Gagal masuk. Periksa kembali username dan password.');
       }
-    }, 200);
+    } catch {
+      setErrorMsg('Terjadi kesalahan saat memeriksa akun. Silakan coba lagi.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const copyToClipboard = (key: string, link: string) => {

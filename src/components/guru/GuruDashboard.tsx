@@ -96,7 +96,7 @@ export const GuruDashboard: React.FC = () => {
     'beranda' | 'siswa_kelas' | 'daftar_asesmen' | 'ujian' | 'buat_ai' | 'upload_file' | 'materi' | 'koreksi' | 'analisis' | 'curang'
   >('beranda');
   const [navOrientation, setNavOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
-  const [selectedExamId, setSelectedExamId] = useState<string>(exams[0]?.id || '');
+  const [selectedExamId, setSelectedExamId] = useState<string>('');
   const [koreksiKelasFilter, setKoreksiKelasFilter] = useState<string>('all');
   const [rekapSortBy, setRekapSortBy] = useState<
     'nama_asc' | 'nama_desc' | 'nilai_desc' | 'nilai_asc' | 'waktu_login_desc' | 'waktu_login_asc' | 'waktu_kirim_desc'
@@ -179,30 +179,59 @@ export const GuruDashboard: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [manualTextToParse, setManualTextToParse] = useState('');
 
-  // Selected Exam
-  const activeExam = exams.find((e) => e.id === selectedExamId) || exams[0];
-  const examSubmissions = submissions.filter((s) => s.examId === activeExam?.id);
+  // Strict Data Isolation: Current teacher's own exams and materials only
+  const myExams = React.useMemo(() => {
+    if (!currentUser) return [];
+    return exams.filter(
+      (e) =>
+        e.guruId === currentUser.id ||
+        (e.guruNama &&
+          currentUser.name &&
+          e.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+    );
+  }, [exams, currentUser]);
+
+  const myMaterials = React.useMemo(() => {
+    if (!currentUser) return [];
+    return materials.filter(
+      (m) =>
+        m.guruId === currentUser.id ||
+        (m.guruNama &&
+          currentUser.name &&
+          m.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+    );
+  }, [materials, currentUser]);
+
+  // Keep selectedExamId in sync with myExams
+  React.useEffect(() => {
+    if (myExams.length > 0 && !myExams.some((e) => e.id === selectedExamId)) {
+      setSelectedExamId(myExams[0].id);
+    }
+  }, [myExams, selectedExamId]);
+
+  // Selected Exam strictly from teacher's own exams
+  const activeExam = myExams.find((e) => e.id === selectedExamId) || myExams[0] || null;
+  const examSubmissions = activeExam ? submissions.filter((s) => s.examId === activeExam.id) : [];
   const itemAnalysis = activeExam ? analyzeExamQuestions(activeExam.soalList, examSubmissions) : [];
 
-  // Cheating violations across all exams
-  const allViolations = submissions.flatMap((s) =>
-    (s.violations || []).map((v) => ({
-      ...v,
-      siswaNama: s.siswaNama,
-      siswaKelas: s.siswaKelas,
-      examJudul: s.examJudul,
-    }))
-  );
+  // Cheating violations strictly for the teacher's own exams
+  const myExamIds = React.useMemo(() => new Set(myExams.map((e) => e.id)), [myExams]);
+  const allViolations = submissions
+    .filter((s) => myExamIds.has(s.examId))
+    .flatMap((s) =>
+      (s.violations || []).map((v) => ({
+        ...v,
+        siswaNama: s.siswaNama,
+        siswaKelas: s.siswaKelas,
+        examJudul: s.examJudul,
+      }))
+    );
 
   // Derived classes taught by the current teacher
   const kelasDiajarList = React.useMemo(() => {
     const explicit = currentUser?.kelasAjar || [];
-    const fromExams = exams
-      .filter((e) => e.guruId === currentUser?.id || e.guruNama === currentUser?.name)
-      .flatMap((e) => e.kelasTarget || []);
-    const fromMaterials = materials
-      .filter((m) => m.guruId === currentUser?.id || m.guruNama === currentUser?.name)
-      .flatMap((m) => m.kelasTarget || []);
+    const fromExams = myExams.flatMap((e) => e.kelasTarget || []);
+    const fromMaterials = myMaterials.flatMap((m) => m.kelasTarget || []);
 
     const merged = Array.from(
       new Set([...explicit, ...fromExams, ...fromMaterials].map((k) => k.trim()).filter(Boolean))
@@ -214,7 +243,7 @@ export const GuruDashboard: React.FC = () => {
       new Set(users.filter((u) => u.role === 'siswa' && u.kelas).map((u) => u.kelas!.trim()))
     );
     return studentClasses.length > 0 ? studentClasses : ['XII 3', 'XII 4'];
-  }, [currentUser, exams, materials, users]);
+  }, [currentUser, myExams, myMaterials, users]);
 
   // Check if current teacher is a homeroom teacher (wali kelas)
   const myWaliKelasRombel = rombelList.find(
@@ -231,12 +260,11 @@ export const GuruDashboard: React.FC = () => {
       );
       const totalSiswa = classStudents.length;
 
-      // Submissions by students in this class for the teacher's subject
+      // Submissions by students in this class for the teacher's own exams
       const subjectSubs = submissions.filter(
         (s) =>
-          s.siswaKelas?.trim().toLowerCase() === namaKelas.trim().toLowerCase() &&
-          (!currentUser?.mataPelajaran ||
-            s.mataPelajaran?.toLowerCase() === currentUser.mataPelajaran.toLowerCase())
+          myExamIds.has(s.examId) &&
+          s.siswaKelas?.trim().toLowerCase() === namaKelas.trim().toLowerCase()
       );
 
       // Student attendance / exam participation
@@ -529,8 +557,8 @@ export const GuruDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Selected Exam Selector */}
-        {exams.length > 0 && (
+        {/* Selected Exam Selector strictly for Current Teacher */}
+        {myExams.length > 0 ? (
           <div className="mt-6 pt-5 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <span className="text-xs text-indigo-200 font-bold">Pilih Ujian Aktif:</span>
@@ -539,7 +567,7 @@ export const GuruDashboard: React.FC = () => {
                 onChange={(e) => setSelectedExamId(e.target.value)}
                 className="bg-white/10 border border-white/20 text-white rounded-xl px-3 py-1.5 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-400"
               >
-                {exams.map((ex) => (
+                {myExams.map((ex) => (
                   <option key={ex.id} value={ex.id} className="bg-slate-900 text-white">
                     {ex.judul} ({ex.soalList.length} Soal)
                   </option>
@@ -618,6 +646,10 @@ export const GuruDashboard: React.FC = () => {
               </div>
             )}
           </div>
+        ) : (
+          <div className="mt-6 pt-5 border-t border-white/10 flex flex-wrap items-center justify-between text-xs text-indigo-200">
+            <span>Belum ada asesmen yang Anda buat. Silakan klik <strong>+ Buat Asesmen Baru</strong> atau <strong>+ Buat Soal AI</strong> untuk membuat naskah ujian.</span>
+          </div>
         )}
       </div>
 
@@ -694,7 +726,7 @@ export const GuruDashboard: React.FC = () => {
             }`}
           >
             <Layers className="w-4 h-4 text-indigo-600" />
-            <span>Semua Asesmen Saya ({exams.length})</span>
+            <span>Semua Asesmen Saya ({myExams.length})</span>
           </button>
 
           <button
@@ -718,7 +750,7 @@ export const GuruDashboard: React.FC = () => {
             }`}
           >
             <FileText className="w-4 h-4 text-emerald-600" />
-            <span>Materi Pelajaran PDF ({materials.length})</span>
+            <span>Materi Pelajaran PDF ({myMaterials.length})</span>
           </button>
 
           <button
@@ -885,8 +917,8 @@ export const GuruDashboard: React.FC = () => {
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Asesmen / Ujian</span>
                 <BookOpen className="w-5 h-5 text-violet-500" />
               </div>
-              <p className="text-2xl font-black text-slate-900">{exams.length}</p>
-              <p className="text-[11px] text-slate-500 mt-1">Sumatif & formatif CBT</p>
+              <p className="text-2xl font-black text-slate-900">{myExams.length}</p>
+              <p className="text-[11px] text-slate-500 mt-1">Sumatif & formatif Anda</p>
             </div>
 
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
@@ -894,8 +926,8 @@ export const GuruDashboard: React.FC = () => {
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Materi PDF</span>
                 <FileText className="w-5 h-5 text-emerald-500" />
               </div>
-              <p className="text-2xl font-black text-slate-900">{materials.length}</p>
-              <p className="text-[11px] text-slate-500 mt-1">Modul & bahan ajar digital</p>
+              <p className="text-2xl font-black text-slate-900">{myMaterials.length}</p>
+              <p className="text-[11px] text-slate-500 mt-1">Modul & bahan ajar Anda</p>
             </div>
           </div>
 
@@ -1097,14 +1129,16 @@ export const GuruDashboard: React.FC = () => {
                 const siswaInClass = users.filter(
                   (u) => u.role === 'siswa' && u.kelas?.trim().toLowerCase() === namaKelas.trim().toLowerCase()
                 );
-                const examsForClass = exams.filter((e) =>
+                const examsForClass = myExams.filter((e) =>
                   e.kelasTarget.some((k) => k.trim().toLowerCase() === namaKelas.trim().toLowerCase())
                 );
-                const materialsForClass = materials.filter((m) =>
+                const materialsForClass = myMaterials.filter((m) =>
                   m.kelasTarget.some((k) => k.trim().toLowerCase() === namaKelas.trim().toLowerCase())
                 );
                 const classSubmissions = submissions.filter(
-                  (s) => s.siswaKelas?.trim().toLowerCase() === namaKelas.trim().toLowerCase()
+                  (s) =>
+                    myExamIds.has(s.examId) &&
+                    s.siswaKelas?.trim().toLowerCase() === namaKelas.trim().toLowerCase()
                 );
                 const avgScore =
                   classSubmissions.length > 0
@@ -1309,7 +1343,7 @@ export const GuruDashboard: React.FC = () => {
             <div className="mt-3 text-xs text-slate-500 font-medium">
               Menampilkan{' '}
               <strong className="text-slate-900">
-                {exams.filter((ex) => {
+                {myExams.filter((ex) => {
                   if (myExamStatusFilter !== 'all' && ex.status !== myExamStatusFilter) return false;
                   if (
                     myExamClassFilter !== 'all' &&
@@ -1327,13 +1361,13 @@ export const GuruDashboard: React.FC = () => {
                   return true;
                 }).length}
               </strong>{' '}
-              dari {exams.length} asesmen terdaftar
+              dari {myExams.length} asesmen Anda
             </div>
           </div>
 
           {/* Cards Asesmen Guru */}
           <div className="space-y-3">
-            {exams
+            {myExams
               .filter((ex) => {
                 if (myExamStatusFilter !== 'all' && ex.status !== myExamStatusFilter) return false;
                 if (
