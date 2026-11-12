@@ -1,12 +1,10 @@
 {
-  "projectId": "grand-oath-kd997",
-  "appId": "1:544103615720:web:baf763a0cf525da9f4cd5d",
-  "apiKey": "AIzaSyAfj8-lDNg4x5aKlKYusAjrC8A-HPM5mwM",
-  "authDomain": "grand-oath-kd997.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-man11jakartalear-b3b0f708-c1a9-4f45-8a15-42aff1b9a754",
-  "storageBucket": "grand-oath-kd997.firebasestorage.app",
-  "messagingSenderId": "544103615720",
-  "measurementId": "",
-  "oAuthClientId": "544103615720-v668r7tkohc2rm53g2579jmvqmdj58p4.apps.googleusercontent.com",
-  "recaptchaSiteKey": ""
+  "apiKey": "AIzaSyDxI8yCi0AdWFb7-xPOQjxXhfKV8mLL_t8",
+  "authDomain": "lms-man11jkt.firebaseapp.com",
+  "databaseURL": "https://lms-man11jkt-default-rtdb.firebaseio.com",
+  "projectId": "lms-man11jkt",
+  "storageBucket": "lms-man11jkt.firebasestorage.app",
+  "messagingSenderId": "786040107006",
+  "appId": "1:786040107006:web:76fb869f43b74b560b1aaf",
+  "measurementId": "G-T8PZ170ND7"
 }

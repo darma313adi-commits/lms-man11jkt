@@ -92,13 +92,24 @@ export function exportGradesPdf({
       ? 'Sumatif Akhir Semester'
       : exam.jenisAsesmen === 'formatif'
       ? 'Asesmen Formatif'
+      : exam.jenisAsesmen === 'tugas'
+      ? 'Tugas / Penugasan'
       : 'Sumatif Lingkup Materi';
   doc.text(`: ${jenisLabel}`, col2X, curY);
   doc.text('Tanggal Cetak', rightX, curY);
   doc.text(`: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, col4X, curY);
 
+  const scopedStudents =
+    exam.targetSiswaIds && exam.targetSiswaIds.length > 0
+      ? allStudentsInClass.filter((st) => exam.targetSiswaIds!.includes(st.id))
+      : allStudentsInClass;
+
+  const filteredClassStudents =
+    kelasName === 'Semua Kelas'
+      ? scopedStudents
+      : scopedStudents.filter((st) => st.kelas?.trim().toLowerCase() === kelasName.trim().toLowerCase());
+
   // Calculate statistics
-  // Match submissions for this class
   const classSubmissions = submissions.filter((s) => {
     if (s.examId !== exam.id) return false;
     if (kelasName === 'Semua Kelas') return true;
@@ -113,7 +124,7 @@ export function exportGradesPdf({
 
   const scores = classSubmissions.map((s) => s.nilai100);
   const totalSiswaHadir = classSubmissions.length;
-  const totalSiswaTerdaftar = allStudentsInClass.length > 0 ? allStudentsInClass.length : totalSiswaHadir;
+  const totalSiswaTerdaftar = filteredClassStudents.length > 0 ? filteredClassStudents.length : totalSiswaHadir;
   const tingkatKehadiran = totalSiswaTerdaftar > 0 ? Math.round((totalSiswaHadir / totalSiswaTerdaftar) * 100) : 0;
 
   const rataRata = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '0';
@@ -141,19 +152,22 @@ export function exportGradesPdf({
 
   doc.text(`Tuntas (>= ${exam.kkm}): ${tuntasCount} Siswa (${persenTuntas}%)`, 18, statY2);
   doc.text(`Belum Tuntas (< ${exam.kkm}): ${belumTuntasCount} Siswa`, 100, statY2);
-  doc.text(`Status Ketuntasan: ${persenTuntas >= 75 ? 'TERCAPAI' : 'PERLU REMEDIAL'}`, 145, statY2);
+  const totalCheatCases = classSubmissions.filter((s) => (s.violations?.length || 0) > 0).length;
+  doc.text(`Terindikasi Curang: ${totalCheatCases} Siswa`, 145, statY2);
 
   // Table Data Siswa
   const tableRows: any[] = [];
-  
-  // If we have class student roster, list all students (including absent ones)
-  if (allStudentsInClass.length > 0) {
-    allStudentsInClass.forEach((st, idx) => {
+
+  const rosterToRender = filteredClassStudents.length > 0 ? filteredClassStudents : [];
+  if (rosterToRender.length > 0) {
+    rosterToRender.forEach((st, idx) => {
       const sub = classSubmissions.find(
         (s) => s.siswaId === st.id || (st.nisn && s.siswaNisn === st.nisn)
       );
       const nilai = sub ? sub.nilai100 : null;
       const statusKetuntasan = nilai !== null ? (nilai >= exam.kkm ? 'TUNTAS' : 'REMEDIAL') : 'BELUM UJIAN';
+      const vCount = sub?.violations?.length || 0;
+      const cheatStatus = sub ? (vCount > 0 ? `${vCount}x Curang` : 'Bersih (0)') : '-';
       const jamLogin = sub?.waktuMulai
         ? new Date(sub.waktuMulai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
         : '-';
@@ -168,14 +182,16 @@ export function exportGradesPdf({
         st.kelas || kelasName,
         nilai !== null ? nilai : '-',
         statusKetuntasan,
+        cheatStatus,
         jamLogin,
         jamKirim,
       ]);
     });
   } else {
-    // If no roster provided, list from submissions
     classSubmissions.forEach((sub, idx) => {
       const statusKetuntasan = sub.nilai100 >= exam.kkm ? 'TUNTAS' : 'REMEDIAL';
+      const vCount = sub.violations?.length || 0;
+      const cheatStatus = vCount > 0 ? `${vCount}x Curang` : 'Bersih (0)';
       const jamLogin = sub.waktuMulai
         ? new Date(sub.waktuMulai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
         : '-';
@@ -190,6 +206,7 @@ export function exportGradesPdf({
         sub.siswaKelas || kelasName,
         sub.nilai100,
         statusKetuntasan,
+        cheatStatus,
         jamLogin,
         jamKirim,
       ]);
@@ -198,74 +215,144 @@ export function exportGradesPdf({
 
   autoTable(doc, {
     startY: curY + 18,
-    head: [['No', 'NISN / Username', 'Nama Siswa', 'Kelas', 'Nilai', 'Status', 'Jam Login', 'Jam Kirim']],
+    head: [['No', 'NISN / User', 'Nama Siswa', 'Kelas', 'Nilai', 'Status', 'Kecurangan', 'Login', 'Kirim']],
     body: tableRows,
     theme: 'grid',
     styles: {
-      fontSize: 8,
-      cellPadding: 2,
+      fontSize: 7.5,
+      cellPadding: 1.8,
       textColor: [30, 41, 59],
     },
     headStyles: {
-      fillColor: [30, 58, 138], // Navy blue
+      fillColor: [30, 58, 138],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       halign: 'center',
     },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 10 },
-      1: { halign: 'center', cellWidth: 30 },
+      0: { halign: 'center', cellWidth: 8 },
+      1: { halign: 'center', cellWidth: 24 },
       2: { halign: 'left' },
-      3: { halign: 'center', cellWidth: 20 },
-      4: { halign: 'center', fontStyle: 'bold', cellWidth: 16 },
-      5: { halign: 'center', cellWidth: 25 },
+      3: { halign: 'center', cellWidth: 16 },
+      4: { halign: 'center', fontStyle: 'bold', cellWidth: 13 },
+      5: { halign: 'center', cellWidth: 22 },
       6: { halign: 'center', cellWidth: 22 },
+      7: { halign: 'center', cellWidth: 14 },
+      8: { halign: 'center', cellWidth: 14 },
     },
     didParseCell: (data) => {
-      // Highlight Remedial vs Tuntas
       if (data.section === 'body' && data.column.index === 5) {
         if (data.cell.raw === 'TUNTAS') {
-          data.cell.styles.textColor = [22, 101, 52]; // Dark green
+          data.cell.styles.textColor = [22, 101, 52];
           data.cell.styles.fontStyle = 'bold';
         } else if (data.cell.raw === 'REMEDIAL') {
-          data.cell.styles.textColor = [185, 28, 28]; // Dark red
+          data.cell.styles.textColor = [185, 28, 28];
           data.cell.styles.fontStyle = 'bold';
         } else {
           data.cell.styles.textColor = [148, 163, 184];
         }
       }
+      if (data.section === 'body' && data.column.index === 6) {
+        const text = String(data.cell.raw || '');
+        if (text.includes('Curang')) {
+          data.cell.styles.textColor = [185, 28, 28];
+          data.cell.styles.fontStyle = 'bold';
+        } else if (text.includes('Bersih')) {
+          data.cell.styles.textColor = [22, 101, 52];
+        }
+      }
     },
   });
 
-  // Signature Block
-  const finalY = (doc as any).lastAutoTable?.finalY || 180;
-  const signY = finalY > 230 ? 250 : finalY + 12;
+  // Detailed Cheating Incident Report Section
+  let afterTableY = (doc as any).lastAutoTable?.finalY || 180;
+  const violatingSubs = classSubmissions.filter((s) => (s.violations?.length || 0) > 0);
+  if (afterTableY > 245) {
+    doc.addPage();
+    afterTableY = 20;
+  } else {
+    afterTableY += 8;
+  }
 
-  // Add new page if not enough space for signature
-  if (finalY > 240) {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(153, 27, 27);
+  doc.text('LAPORAN CATATAN KECURANGAN & PELANGGARAN UJIAN SISWA', 14, afterTableY);
+
+  if (violatingSubs.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(22, 101, 52);
+    doc.text('Tidak ada catatan pelanggaran kecurangan terdeteksi pada pelaksanaan ujian ini. Seluruh peserta tertib.', 14, afterTableY + 5);
+    afterTableY += 10;
+  } else {
+    const cheatRows: any[] = [];
+    violatingSubs.forEach((sub) => {
+      (sub.violations || []).forEach((v, vIdx) => {
+        cheatRows.push([
+          cheatRows.length + 1,
+          sub.siswaNama,
+          sub.siswaKelas,
+          `Ke-${vIdx + 1}`,
+          new Date(v.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          v.tipe.toUpperCase(),
+          v.deskripsi,
+        ]);
+      });
+    });
+
+    autoTable(doc, {
+      startY: afterTableY + 3,
+      head: [['No', 'Nama Siswa', 'Kelas', 'Pelanggaran', 'Waktu', 'Jenis', 'Keterangan Sistem']],
+      body: cheatRows,
+      theme: 'grid',
+      styles: {
+        fontSize: 7.5,
+        cellPadding: 1.8,
+        textColor: [30, 41, 59],
+      },
+      headStyles: {
+        fillColor: [185, 28, 28],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        halign: 'center',
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 8 },
+        1: { halign: 'left', cellWidth: 34 },
+        2: { halign: 'center', cellWidth: 16 },
+        3: { halign: 'center', cellWidth: 18 },
+        4: { halign: 'center', cellWidth: 18 },
+        5: { halign: 'center', cellWidth: 24 },
+        6: { halign: 'left' },
+      },
+    });
+    afterTableY = (doc as any).lastAutoTable?.finalY || afterTableY + 20;
+  }
+
+  // Signature Block
+  const signY = afterTableY > 235 ? 250 : afterTableY + 12;
+  if (afterTableY > 235) {
     doc.addPage();
   }
 
-  const signPageY = finalY > 240 ? 30 : signY;
+  const signPageY = afterTableY > 235 ? 30 : signY;
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(30, 41, 59);
 
-  // Left: Kepala Madrasah
   doc.text('Mengetahui,', 25, signPageY);
   doc.text('Kepala MAN 11 Jakarta', 25, signPageY + 5);
   doc.text(kamadName || 'Drs. H. Ahmad Fauzi, M.Pd.I', 25, signPageY + 28);
   doc.text(`NIP. ${kamadNip || '196807121995031002'}`, 25, signPageY + 33);
 
-  // Right: Guru Mata Pelajaran
   const rightSignX = pageWidth - 65;
   doc.text(`Jakarta, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightSignX, signPageY);
   doc.text('Guru Mata Pelajaran,', rightSignX, signPageY + 5);
   doc.text(guruName, rightSignX, signPageY + 28);
   doc.text(`NIP. ${guruNip || '198205142008012015'}`, rightSignX, signPageY + 33);
 
-  // Save PDF
   const sanitizedJudul = exam.judul.replace(/[^a-zA-Z0-9]/g, '_');
   const sanitizedKelas = kelasName.replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`Laporan_Nilai_${sanitizedKelas}_${sanitizedJudul}.pdf`);

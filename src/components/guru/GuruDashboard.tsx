@@ -1,6 +1,14 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import { useLMS } from '../../context/LMSContext';
-import { Exam, QuestionItem, QuestionType, ExamSubmission, LessonMaterial } from '../../types';
+import {
+  Exam,
+  QuestionItem,
+  QuestionType,
+  ExamSubmission,
+  LessonMaterial,
+  AttendanceStatus,
+} from '../../types';
 import {
   BookOpen,
   Sparkles,
@@ -42,6 +50,8 @@ import {
   X,
   EyeOff,
   ArrowUpDown,
+  ClipboardCheck,
+  Save,
 } from 'lucide-react';
 import {
   downloadQuestionTemplateExcel,
@@ -60,11 +70,13 @@ import {
 import { generateQuestionsWithAI, parseRawTextToQuestions } from '../../utils/aiGenerator';
 import { analyzeExamQuestions } from '../../utils/examScoring';
 import { ChangePasswordModal } from './ChangePasswordModal';
-import { ExamSettingsModal, ALL_CLASSES_LIST } from './ExamSettingsModal';
+import { ExamSettingsModal } from './ExamSettingsModal';
 import { DaftarSiswaPerKelas } from './DaftarSiswaPerKelas';
 import { QuestionImageEditorModal } from './QuestionImageEditorModal';
 import { ExamViewModal } from '../common/ExamViewModal';
 import { MaterialViewModal } from '../common/MaterialViewModal';
+
+const DELETED_CLASSES_FILTER = ['XII 1', 'XII 2', 'Semua Kelas'];
 
 export const GuruDashboard: React.FC = () => {
   const {
@@ -84,20 +96,29 @@ export const GuruDashboard: React.FC = () => {
     addMaterial,
     deleteMaterial,
     rombelList,
-    mataPelajaranList,
+    kelasMapelPengampuList,
+    attendanceList,
+    saveAttendance,
+    deleteAttendance,
   } = useLMS();
 
-  const examClassChoices =
-    rombelList && rombelList.length > 0
-      ? [...rombelList.map((r) => r.nama), 'Semua Kelas']
-      : ALL_CLASSES_LIST;
-
   const [activeTab, setActiveTab] = useState<
-    'beranda' | 'siswa_kelas' | 'daftar_asesmen' | 'ujian' | 'buat_ai' | 'upload_file' | 'materi' | 'koreksi' | 'analisis' | 'curang'
+    | 'beranda'
+    | 'absensi'
+    | 'siswa_kelas'
+    | 'daftar_asesmen'
+    | 'ujian'
+    | 'buat_ai'
+    | 'upload_file'
+    | 'materi'
+    | 'koreksi'
+    | 'analisis'
+    | 'curang'
   >('beranda');
   const [navOrientation, setNavOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
   const [selectedExamId, setSelectedExamId] = useState<string>('');
   const [koreksiKelasFilter, setKoreksiKelasFilter] = useState<string>('all');
+  const [showCheatingDetailsInKoreksi, setShowCheatingDetailsInKoreksi] = useState<boolean>(false);
   const [rekapSortBy, setRekapSortBy] = useState<
     'nama_asc' | 'nama_desc' | 'nilai_desc' | 'nilai_asc' | 'waktu_login_desc' | 'waktu_login_asc' | 'waktu_kirim_desc'
   >('nama_asc');
@@ -109,7 +130,10 @@ export const GuruDashboard: React.FC = () => {
   const [selectedExamForSettings, setSelectedExamForSettings] = useState<Exam | null>(null);
   const [showQuestionEditorModal, setShowQuestionEditorModal] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<QuestionItem | null>(null);
-  const [newExamClasses, setNewExamClasses] = useState<string[]>(['XII 3', 'XII 4']);
+  const [newExamClasses, setNewExamClasses] = useState<string[]>([]);
+  const [newExamTargetMode, setNewExamTargetMode] = useState<'class' | 'students'>('class');
+  const [newExamTargetSiswaIds, setNewExamTargetSiswaIds] = useState<string[]>([]);
+  const [newExamStudentSearch, setNewExamStudentSearch] = useState<string>('');
 
   // Modals for Viewing Exam and Material
   const [selectedExamForView, setSelectedExamForView] = useState<Exam | null>(null);
@@ -136,13 +160,13 @@ export const GuruDashboard: React.FC = () => {
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [generatedPreviewQuestions, setGeneratedPreviewQuestions] = useState<QuestionItem[]>([]);
 
-  // Create New Exam Modal (Asesmen Sumatif & Formatif)
+  // Create New Exam / Tugas Modal
   const [showCreateExamModal, setShowCreateExamModal] = useState(false);
   const [newExamData, setNewExamData] = useState({
     judul: '',
     deskripsi: '',
     mataPelajaran: currentUser?.mataPelajaran || 'Biologi',
-    kelasTarget: 'XII 3, XII 4',
+    kelasTarget: '',
     durasiMenit: 60,
     kkm: 75,
     status: 'aktif' as 'draft' | 'aktif',
@@ -150,7 +174,11 @@ export const GuruDashboard: React.FC = () => {
     waktuKadaluarsa: '',
     useToken: true,
     tokenUjian: `TK${Math.floor(1000 + Math.random() * 9000)}`,
-    jenisAsesmen: 'sumatif_lingkup_materi' as 'sumatif_lingkup_materi' | 'sumatif_akhir_semester' | 'formatif',
+    jenisAsesmen: 'sumatif_lingkup_materi' as
+      | 'sumatif_lingkup_materi'
+      | 'sumatif_akhir_semester'
+      | 'formatif'
+      | 'tugas',
     kodeUjian: `EXAM-${Math.floor(1000 + Math.random() * 9000)}`,
   });
 
@@ -159,13 +187,13 @@ export const GuruDashboard: React.FC = () => {
     judul: '',
     deskripsi: '',
     mataPelajaran: currentUser?.mataPelajaran || 'Biologi',
-    kelasTarget: 'XII 3, XII 4',
+    kelasTarget: '',
     fileName: '',
     fileSize: '',
   });
+  const [materialClasses, setMaterialClasses] = useState<string[]>([]);
   const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
   const [previewMaterial, setPreviewMaterial] = useState<LessonMaterial | null>(null);
-  const [materialOwnerFilter, setMaterialOwnerFilter] = useState<'all' | 'mine'>('all');
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
   // Submission correction modal
@@ -180,7 +208,7 @@ export const GuruDashboard: React.FC = () => {
   const [manualTextToParse, setManualTextToParse] = useState('');
 
   // Strict Data Isolation: Current teacher's own exams and materials only
-  const myExams = React.useMemo(() => {
+  const myExams = useMemo(() => {
     if (!currentUser) return [];
     return exams.filter(
       (e) =>
@@ -191,7 +219,7 @@ export const GuruDashboard: React.FC = () => {
     );
   }, [exams, currentUser]);
 
-  const myMaterials = React.useMemo(() => {
+  const myMaterials = useMemo(() => {
     if (!currentUser) return [];
     return materials.filter(
       (m) =>
@@ -203,7 +231,7 @@ export const GuruDashboard: React.FC = () => {
   }, [materials, currentUser]);
 
   // Keep selectedExamId in sync with myExams
-  React.useEffect(() => {
+  useEffect(() => {
     if (myExams.length > 0 && !myExams.some((e) => e.id === selectedExamId)) {
       setSelectedExamId(myExams[0].id);
     }
@@ -215,7 +243,7 @@ export const GuruDashboard: React.FC = () => {
   const itemAnalysis = activeExam ? analyzeExamQuestions(activeExam.soalList, examSubmissions) : [];
 
   // Cheating violations strictly for the teacher's own exams
-  const myExamIds = React.useMemo(() => new Set(myExams.map((e) => e.id)), [myExams]);
+  const myExamIds = useMemo(() => new Set(myExams.map((e) => e.id)), [myExams]);
   const allViolations = submissions
     .filter((s) => myExamIds.has(s.examId))
     .flatMap((s) =>
@@ -227,23 +255,207 @@ export const GuruDashboard: React.FC = () => {
       }))
     );
 
-  // Derived classes taught by the current teacher
-  const kelasDiajarList = React.useMemo(() => {
-    const explicit = currentUser?.kelasAjar || [];
-    const fromExams = myExams.flatMap((e) => e.kelasTarget || []);
-    const fromMaterials = myMaterials.flatMap((m) => m.kelasTarget || []);
+  // Classes strictly taught by this teacher (from profile kelasAjar + kelasMapelPengampu plotting)
+  const kelasDiajarList = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role !== 'guru') {
+      return rombelList
+        .map((r) => r.nama.trim())
+        .filter((k) => k && !DELETED_CLASSES_FILTER.some((d) => d.toLowerCase() === k.toLowerCase()))
+        .sort();
+    }
 
-    const merged = Array.from(
-      new Set([...explicit, ...fromExams, ...fromMaterials].map((k) => k.trim()).filter(Boolean))
-    );
-    if (merged.length > 0) return merged;
+    const fromProfile = currentUser.kelasAjar || [];
+    const fromPlotting = kelasMapelPengampuList
+      .filter(
+        (k) =>
+          k.guruId === currentUser.id ||
+          (k.guruNama &&
+            currentUser.name &&
+            k.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+      )
+      .map((k) => k.kelasNama);
 
-    // Fallback if not configured
-    const studentClasses = Array.from(
-      new Set(users.filter((u) => u.role === 'siswa' && u.kelas).map((u) => u.kelas!.trim()))
+    return Array.from(
+      new Set(
+        [...fromProfile, ...fromPlotting]
+          .map((k) => k.trim())
+          .filter(
+            (k) =>
+              Boolean(k) &&
+              !DELETED_CLASSES_FILTER.some((d) => d.toLowerCase() === k.toLowerCase())
+          )
+      )
+    ).sort();
+  }, [currentUser, kelasMapelPengampuList, rombelList]);
+
+  // Exam & Material class choices strictly equal to classes taught by the teacher
+  const examClassChoices = kelasDiajarList;
+
+  // Keep newExamClasses & materialClasses synced with taught classes
+  useEffect(() => {
+    if (kelasDiajarList.length === 0) {
+      setNewExamClasses([]);
+      setMaterialClasses([]);
+      return;
+    }
+    const allowedSet = new Set(kelasDiajarList.map((k) => k.toLowerCase()));
+    setNewExamClasses((prev) => {
+      const valid = prev.filter((c) => allowedSet.has(c.toLowerCase()));
+      return valid.length > 0 ? valid : [kelasDiajarList[0]];
+    });
+    setMaterialClasses((prev) => {
+      const valid = prev.filter((c) => allowedSet.has(c.toLowerCase()));
+      return valid.length > 0 ? valid : [kelasDiajarList[0]];
+    });
+  }, [kelasDiajarList]);
+
+  // Students strictly in classes taught by this teacher
+  const myTaughtStudents = useMemo(() => {
+    const allowedSet = new Set(kelasDiajarList.map((k) => k.trim().toLowerCase()));
+    return users
+      .filter(
+        (u) =>
+          u.role === 'siswa' &&
+          u.kelas &&
+          allowedSet.has(u.kelas.trim().toLowerCase())
+      )
+      .sort((a, b) => a.name.localeCompare(b.name, 'id-ID'));
+  }, [users, kelasDiajarList]);
+
+  // --- ABSENSI SISWA STATE & HANDLERS (Khusus Kelas yang Diajar) ---
+  const [absensiKelas, setAbsensiKelas] = useState<string>('');
+  const [absensiTanggal, setAbsensiTanggal] = useState<string>(
+    () => new Date().toISOString().split('T')[0]
+  );
+  const [absensiTopik, setAbsensiTopik] = useState<string>('');
+  const [absensiMap, setAbsensiMap] = useState<
+    Record<string, { status: AttendanceStatus; keterangan: string }>
+  >({});
+  const [absensiSaveNotice, setAbsensiSaveNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (kelasDiajarList.length === 0) {
+      setAbsensiKelas('');
+      return;
+    }
+    if (!absensiKelas || !kelasDiajarList.some((c) => c.toLowerCase() === absensiKelas.toLowerCase())) {
+      setAbsensiKelas(kelasDiajarList[0]);
+    }
+  }, [kelasDiajarList, absensiKelas]);
+
+  const absensiStudents = useMemo(() => {
+    if (!absensiKelas) return [];
+    return users
+      .filter(
+        (u) =>
+          u.role === 'siswa' &&
+          u.kelas?.trim().toLowerCase() === absensiKelas.trim().toLowerCase()
+      )
+      .sort((a, b) => a.name.localeCompare(b.name, 'id-ID'));
+  }, [users, absensiKelas]);
+
+  const existingAbsensiRecord = useMemo(() => {
+    if (!absensiKelas || !absensiTanggal || !currentUser) return undefined;
+    return attendanceList.find(
+      (a) =>
+        a.tanggal === absensiTanggal &&
+        a.kelasNama.trim().toLowerCase() === absensiKelas.trim().toLowerCase() &&
+        (a.guruId === currentUser.id ||
+          (a.guruNama &&
+            currentUser.name &&
+            a.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase()))
     );
-    return studentClasses.length > 0 ? studentClasses : ['XII 3', 'XII 4'];
-  }, [currentUser, myExams, myMaterials, users]);
+  }, [attendanceList, absensiKelas, absensiTanggal, currentUser]);
+
+  useEffect(() => {
+    if (!absensiKelas) {
+      setAbsensiMap({});
+      return;
+    }
+    const nextMap: Record<string, { status: AttendanceStatus; keterangan: string }> = {};
+    absensiStudents.forEach((s) => {
+      const existingEntry = existingAbsensiRecord?.records?.[s.id];
+      nextMap[s.id] = existingEntry
+        ? { status: existingEntry.status, keterangan: existingEntry.keterangan || '' }
+        : { status: 'Hadir', keterangan: '' };
+    });
+    setAbsensiMap(nextMap);
+    setAbsensiTopik(existingAbsensiRecord?.materiTopik || '');
+  }, [absensiKelas, absensiTanggal, existingAbsensiRecord, absensiStudents]);
+
+  const myAttendanceHistory = useMemo(() => {
+    if (!currentUser) return [];
+    const taughtSet = new Set(kelasDiajarList.map((k) => k.trim().toLowerCase()));
+    return attendanceList
+      .filter(
+        (a) =>
+          taughtSet.has(a.kelasNama.trim().toLowerCase()) &&
+          (a.guruId === currentUser.id ||
+            (a.guruNama &&
+              currentUser.name &&
+              a.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase()))
+      )
+      .sort((a, b) => b.tanggal.localeCompare(a.tanggal));
+  }, [attendanceList, kelasDiajarList, currentUser]);
+
+  const handleSaveAbsensi = () => {
+    if (!currentUser || !absensiKelas) {
+      alert('Pilih kelas yang Anda ajar terlebih dahulu.');
+      return;
+    }
+    if (!kelasDiajarList.some((k) => k.toLowerCase() === absensiKelas.toLowerCase())) {
+      alert('Anda hanya diperbolehkan mengisi absensi untuk kelas yang Anda ajar.');
+      return;
+    }
+    const records: AttendanceRecord['records'] = {};
+    absensiStudents.forEach((s) => {
+      const val = absensiMap[s.id] || { status: 'Hadir' as AttendanceStatus, keterangan: '' };
+      records[s.id] = {
+        siswaId: s.id,
+        siswaNama: s.name,
+        siswaNisn: s.nisn,
+        status: val.status,
+        keterangan: val.keterangan.trim() || undefined,
+      };
+    });
+
+    saveAttendance({
+      id: existingAbsensiRecord?.id,
+      tanggal: absensiTanggal,
+      kelasNama: absensiKelas,
+      mataPelajaran: currentUser.mataPelajaran || 'Mata Pelajaran',
+      guruId: currentUser.id,
+      guruNama: currentUser.name,
+      materiTopik: absensiTopik.trim() || undefined,
+      records,
+    });
+
+    setAbsensiSaveNotice(
+      `Absensi kelas ${absensiKelas} tanggal ${absensiTanggal} berhasil disimpan ke Realtime Database!`
+    );
+  };
+
+  const handleExportAbsensiExcel = () => {
+    if (!absensiKelas || absensiStudents.length === 0) return;
+    const rows = absensiStudents.map((s, idx) => {
+      const entry = absensiMap[s.id] || { status: 'Hadir', keterangan: '' };
+      return {
+        No: idx + 1,
+        Tanggal: absensiTanggal,
+        Kelas: absensiKelas,
+        'Mata Pelajaran': currentUser?.mataPelajaran || '-',
+        NISN: s.nisn || '-',
+        'Nama Siswa': s.name,
+        Status: entry.status,
+        Keterangan: entry.keterangan || '-',
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Absensi');
+    XLSX.writeFile(wb, `Absensi_${absensiKelas.replace(/\s+/g, '_')}_${absensiTanggal}.xlsx`);
+  };
 
   // Check if current teacher is a homeroom teacher (wali kelas)
   const myWaliKelasRombel = rombelList.find(
@@ -253,7 +465,7 @@ export const GuruDashboard: React.FC = () => {
   );
 
   // Calculate visual statistics per class for the teacher's subject
-  const classVisualStats = React.useMemo(() => {
+  const classVisualStats = useMemo(() => {
     return kelasDiajarList.map((namaKelas) => {
       const classStudents = users.filter(
         (u) => u.role === 'siswa' && u.kelas?.trim().toLowerCase() === namaKelas.trim().toLowerCase()
@@ -293,7 +505,7 @@ export const GuruDashboard: React.FC = () => {
         submissionsCount: subjectSubs.length,
       };
     });
-  }, [kelasDiajarList, users, submissions, currentUser, activeExam]);
+  }, [kelasDiajarList, users, submissions, activeExam, myExamIds]);
 
   const handleGenerateAI = async () => {
     setIsAiGenerating(true);
@@ -387,13 +599,30 @@ export const GuruDashboard: React.FC = () => {
 
   const handleCreateExamSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (kelasDiajarList.length === 0) {
+      alert('Anda belum memiliki kelas ajar yang ditetapkan. Hubungi Admin untuk plotting kelas ajar terlebih dahulu.');
+      return;
+    }
+
+    const allowedSet = new Set(kelasDiajarList.map((k) => k.toLowerCase()));
+    const targetClasses = newExamClasses.filter((c) => allowedSet.has(c.toLowerCase()));
+    if (targetClasses.length === 0) {
+      alert('Pilih minimal satu kelas yang Anda ajar sebagai sasaran.');
+      return;
+    }
+
+    if (newExamTargetMode === 'students' && newExamTargetSiswaIds.length === 0) {
+      alert('Pilih minimal satu siswa tertentu, atau ubah mode ke "Semua Siswa di Kelas".');
+      return;
+    }
+
     const tokenClean = newExamData.tokenUjian.trim().toUpperCase() || 'MAN11';
-    const targetClasses = newExamClasses.length > 0 ? newExamClasses : ['XII 3', 'XII 4'];
     const created = createExam({
       judul: newExamData.judul,
       deskripsi: newExamData.deskripsi,
       mataPelajaran: newExamData.mataPelajaran,
       kelasTarget: targetClasses,
+      targetSiswaIds: newExamTargetMode === 'students' ? newExamTargetSiswaIds : undefined,
       durasiMenit: Number(newExamData.durasiMenit) || 60,
       kkm: Number(newExamData.kkm) || 75,
       jenisAsesmen: newExamData.jenisAsesmen,
@@ -425,7 +654,11 @@ export const GuruDashboard: React.FC = () => {
 
     setSelectedExamId(created.id);
     setShowCreateExamModal(false);
-    alert(`Ujian "${created.judul}" berhasil dibuat! Silakan tambahkan butir soal via AI atau Import File.`);
+    setNewExamTargetMode('class');
+    setNewExamTargetSiswaIds([]);
+    setNewExamStudentSearch('');
+    const labelType = created.jenisAsesmen === 'tugas' ? 'Tugas' : 'Ujian';
+    alert(`${labelType} "${created.judul}" berhasil dibuat! Silakan tambahkan butir soal via AI, Manual, atau Import File.`);
     setActiveTab('buat_ai');
   };
 
@@ -448,6 +681,10 @@ export const GuruDashboard: React.FC = () => {
       alert('Judul materi pelajaran wajib diisi!');
       return;
     }
+    if (kelasDiajarList.length === 0 || materialClasses.length === 0) {
+      alert('Pilih minimal satu kelas yang Anda ajar sebagai penerima materi.');
+      return;
+    }
 
     const fileName = selectedPdfFile?.name || materialForm.fileName || 'Materi_Pelajaran_MAN11.pdf';
     const fileSize = selectedPdfFile
@@ -458,7 +695,7 @@ export const GuruDashboard: React.FC = () => {
       judul: materialForm.judul,
       deskripsi: materialForm.deskripsi || 'Materi bahan ajar pendukung untuk persiapan Asesmen Sumatif.',
       mataPelajaran: materialForm.mataPelajaran || currentUser?.mataPelajaran || 'Biologi',
-      kelasTarget: materialForm.kelasTarget.split(',').map((k) => k.trim()),
+      kelasTarget: materialClasses,
       guruId: currentUser?.id || 'guru',
       guruNama: currentUser?.name || 'Guru Pengampu',
       fileName,
@@ -470,14 +707,14 @@ export const GuruDashboard: React.FC = () => {
       judul: '',
       deskripsi: '',
       mataPelajaran: currentUser?.mataPelajaran || 'Biologi',
-      kelasTarget: 'XII 3, XII 4',
+      kelasTarget: '',
       fileName: '',
       fileSize: '',
     });
     setSelectedPdfFile(null);
     if (pdfInputRef.current) pdfInputRef.current.value = '';
 
-    setUploadFeedback(`Materi PDF berhasil diunggah dan dibagikan ke siswa kelas sasaran!`);
+    setUploadFeedback(`Materi PDF berhasil diunggah dan dibagikan ke kelas ajar (${materialClasses.join(', ')})!`);
   };
 
   const openReviewModal = (sub: ExamSubmission) => {
@@ -533,12 +770,38 @@ export const GuruDashboard: React.FC = () => {
                   judul: 'Asesmen Sumatif Lingkup Materi',
                   jenisAsesmen: 'sumatif_lingkup_materi',
                 }));
+                setNewExamTargetMode('class');
+                setNewExamTargetSiswaIds([]);
                 setShowCreateExamModal(true);
               }}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold shadow-md transition cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>+ Buat Asesmen Sumatif</span>
+              <span>+ Buat Ujian</span>
+            </button>
+            <button
+              onClick={() => {
+                setNewExamData((prev) => ({
+                  ...prev,
+                  judul: 'Tugas Terstruktur / Penugasan',
+                  jenisAsesmen: 'tugas',
+                  useToken: false,
+                }));
+                setNewExamTargetMode('class');
+                setNewExamTargetSiswaIds([]);
+                setShowCreateExamModal(true);
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md transition cursor-pointer"
+            >
+              <ClipboardCheck className="w-4 h-4" />
+              <span>+ Buat Tugas</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('absensi')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-md transition cursor-pointer"
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>Isi Absensi</span>
             </button>
             <button
               onClick={() => setActiveTab('materi')}
@@ -718,6 +981,18 @@ export const GuruDashboard: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('absensi')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+              activeTab === 'absensi'
+                ? 'bg-teal-600 text-white shadow-xs'
+                : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200/80'
+            }`}
+          >
+            <UserCheck className="w-4 h-4" />
+            <span>Absensi Siswa ({kelasDiajarList.length} Kelas)</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('daftar_asesmen')}
             className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
               activeTab === 'daftar_asesmen'
@@ -726,7 +1001,7 @@ export const GuruDashboard: React.FC = () => {
             }`}
           >
             <Layers className="w-4 h-4 text-indigo-600" />
-            <span>Semua Asesmen Saya ({myExams.length})</span>
+            <span>Ujian & Tugas Saya ({myExams.length})</span>
           </button>
 
           <button
@@ -762,7 +1037,7 @@ export const GuruDashboard: React.FC = () => {
             }`}
           >
             <School className="w-4 h-4 text-indigo-600" />
-            <span>Siswa per Kelas ({users.filter((u) => u.role === 'siswa').length})</span>
+            <span>Siswa Kelas Ajar ({myTaughtStudents.length})</span>
           </button>
 
           <button

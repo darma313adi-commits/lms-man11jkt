@@ -1,22 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Exam, ExamToken } from '../../types';
 import { useLMS } from '../../context/LMSContext';
 import {
   X,
   Settings,
   Calendar,
-  Clock,
   KeyRound,
   CheckCircle2,
-  RefreshCw,
   Copy,
   Check,
   AlertCircle,
-  Plus,
   Trash2,
   School,
   Timer,
   Zap,
+  Users,
+  Search,
 } from 'lucide-react';
 
 interface ExamSettingsModalProps {
@@ -34,45 +33,104 @@ export const ALL_CLASSES_LIST = [
   'Semua Kelas',
 ];
 
+function generateRandomTokenCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
   exam,
   isOpen,
   onClose,
   onSave,
 }) => {
-  const { rombelList } = useLMS();
-  const classChoices =
-    rombelList && rombelList.length > 0
+  const { rombelList, currentUser, users, kelasMapelPengampuList } = useLMS();
+  const isTeacher = currentUser?.role === 'guru';
+
+  const classChoices = useMemo(() => {
+    if (isTeacher && currentUser) {
+      const fromProfile = currentUser.kelasAjar || [];
+      const fromPlotting = kelasMapelPengampuList
+        .filter(
+          (k) =>
+            k.guruId === currentUser.id ||
+            (k.guruNama &&
+              currentUser.name &&
+              k.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+        )
+        .map((k) => k.kelasNama);
+      const taught = Array.from(
+        new Set([...fromProfile, ...fromPlotting].map((k) => k.trim()).filter(Boolean))
+      ).sort();
+      return taught;
+    }
+    return rombelList && rombelList.length > 0
       ? [...rombelList.map((r) => r.nama), 'Semua Kelas']
       : ALL_CLASSES_LIST;
+  }, [isTeacher, currentUser, kelasMapelPengampuList, rombelList]);
 
-  if (!isOpen || !exam) return null;
-
-  const [status, setStatus] = useState<'draft' | 'aktif' | 'selesai'>(exam.status || 'aktif');
-  const [selectedClasses, setSelectedClasses] = useState<string[]>(() => {
-    return exam.kelasTarget && exam.kelasTarget.length > 0
-      ? exam.kelasTarget.filter((k) => !['X 1', 'X 2', 'XI 1', 'XI 2', 'XI 3', 'XI 4', 'XII 1', 'XII 2'].includes(k))
-      : ['XII 3', 'XII 4'];
-  });
-  const [waktuMulai, setWaktuMulai] = useState<string>(exam.waktuMulai || '');
-  const [waktuKadaluarsa, setWaktuKadaluarsa] = useState<string>(exam.waktuKadaluarsa || '');
-  const [useToken, setUseToken] = useState<boolean>(exam.useToken ?? !!exam.tokenUjian);
-  const [durasiMenit, setDurasiMenit] = useState<number>(exam.durasiMenit || 60);
-  const [kkm, setKkm] = useState<number>(exam.kkm || 75);
-  const [acakSoal, setAcakSoal] = useState<boolean>(exam.acakSoal ?? true);
-  const [acakOpsi, setAcakOpsi] = useState<boolean>(exam.acakOpsi ?? true);
-  const [tampilkanNilai, setTampilkanNilai] = useState<boolean>(exam.tampilkanNilai ?? true);
+  const [status, setStatus] = useState<'draft' | 'aktif' | 'selesai'>('aktif');
+  const [selectedClasses, setSelectedClasses] = useState<string[]>(['XII 3']);
+  const [targetMode, setTargetMode] = useState<'class' | 'students'>('class');
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [studentSearch, setStudentSearch] = useState<string>('');
+  const [waktuMulai, setWaktuMulai] = useState<string>('');
+  const [waktuKadaluarsa, setWaktuKadaluarsa] = useState<string>('');
+  const [useToken, setUseToken] = useState<boolean>(true);
+  const [durasiMenit, setDurasiMenit] = useState<number>(60);
+  const [kkm, setKkm] = useState<number>(75);
+  const [acakSoal, setAcakSoal] = useState<boolean>(true);
+  const [acakOpsi, setAcakOpsi] = useState<boolean>(true);
+  const [tampilkanNilai, setTampilkanNilai] = useState<boolean>(true);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [copiedTokenId, setCopiedTokenId] = useState<string | null>(null);
+  const [tokenList, setTokenList] = useState<ExamToken[]>([]);
+  const [customTokenInput, setCustomTokenInput] = useState('');
+  const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
-  // Multi-Token Management (Token 1, Token 2, Token 3, ...) with 10-Minute Expiration
-  const [tokenList, setTokenList] = useState<ExamToken[]>(() => {
-    if (exam.tokenList && exam.tokenList.length > 0) {
-      return exam.tokenList;
+  // Sync form states whenever exam or modal open state changes
+  useEffect(() => {
+    if (!isOpen || !exam) return;
+    setStatus(exam.status || 'aktif');
+
+    const rawClasses = (exam.kelasTarget || []).filter(
+      (k) => !['X 1', 'X 2', 'XI 1', 'XI 2', 'XI 3', 'XI 4', 'XII 1', 'XII 2'].includes(k)
+    );
+    if (isTeacher && classChoices.length > 0) {
+      const allowedSet = new Set(classChoices.map((c) => c.toLowerCase()));
+      const filtered = rawClasses.filter((c) => allowedSet.has(c.toLowerCase()));
+      setSelectedClasses(filtered.length > 0 ? filtered : [classChoices[0]]);
+    } else {
+      setSelectedClasses(rawClasses.length > 0 ? rawClasses : ['XII 3', 'XII 4']);
     }
-    // If exam has legacy single token, convert to Token 1
-    if (exam.tokenUjian) {
-      return [
+
+    if (exam.targetSiswaIds && exam.targetSiswaIds.length > 0) {
+      setTargetMode('students');
+      setSelectedStudentIds(exam.targetSiswaIds);
+    } else {
+      setTargetMode('class');
+      setSelectedStudentIds([]);
+    }
+    setStudentSearch('');
+
+    setWaktuMulai(exam.waktuMulai || '');
+    setWaktuKadaluarsa(exam.waktuKadaluarsa || '');
+    setUseToken(exam.useToken ?? !!exam.tokenUjian);
+    setDurasiMenit(exam.durasiMenit || 60);
+    setKkm(exam.kkm || 75);
+    setAcakSoal(exam.acakSoal ?? true);
+    setAcakOpsi(exam.acakOpsi ?? true);
+    setTampilkanNilai(exam.tampilkanNilai ?? true);
+    setSaveSuccess(false);
+
+    if (exam.tokenList && exam.tokenList.length > 0) {
+      setTokenList(exam.tokenList);
+    } else if (exam.tokenUjian) {
+      setTokenList([
         {
           id: `tok_${Date.now()}_1`,
           nomor: 1,
@@ -81,47 +139,61 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
           createdAt: new Date().toISOString(),
           expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
         },
-      ];
+      ]);
+    } else {
+      setTokenList([
+        {
+          id: `tok_${Date.now()}_1`,
+          nomor: 1,
+          label: 'Token 1',
+          token: generateRandomTokenCode(),
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        },
+      ]);
     }
-    // Default initial token 1
-    const initialTok = generateRandomTokenCode();
-    return [
-      {
-        id: `tok_${Date.now()}_1`,
-        nomor: 1,
-        label: 'Token 1',
-        token: initialTok,
-        createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-      },
-    ];
-  });
-
-  const [customTokenInput, setCustomTokenInput] = useState('');
-  const [currentTime, setCurrentTime] = useState<number>(Date.now());
+  }, [exam, isOpen, isTeacher, classChoices]);
 
   // Real-time clock tick for live countdowns (10-minute expiry)
   useEffect(() => {
+    if (!isOpen) return;
     const timer = setInterval(() => {
       setCurrentTime(Date.now());
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [isOpen]);
 
-  function generateRandomTokenCode(): string {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let result = '';
-    for (let i = 0; i < 6; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-  }
+  // Eligible students inside selected classes
+  const studentsInSelectedClasses = useMemo(() => {
+    const classSet = new Set(selectedClasses.map((c) => c.trim().toLowerCase()));
+    const isAllClasses = !isTeacher && selectedClasses.includes('Semua Kelas');
+    return users
+      .filter((u) => {
+        if (u.role !== 'siswa') return false;
+        if (isAllClasses) return true;
+        return !!u.kelas && classSet.has(u.kelas.trim().toLowerCase());
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, 'id-ID'));
+  }, [users, selectedClasses, isTeacher]);
+
+  const filteredStudentCandidates = useMemo(() => {
+    if (!studentSearch.trim()) return studentsInSelectedClasses;
+    const q = studentSearch.toLowerCase();
+    return studentsInSelectedClasses.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        (s.kelas && s.kelas.toLowerCase().includes(q)) ||
+        (s.nisn && s.nisn.includes(q))
+    );
+  }, [studentsInSelectedClasses, studentSearch]);
+
+  if (!isOpen || !exam) return null;
 
   // Toggle selection for class
   const toggleClass = (kelasName: string) => {
     if (kelasName === 'Semua Kelas') {
       if (selectedClasses.includes('Semua Kelas')) {
-        setSelectedClasses(['XII 3', 'XII 4']);
+        setSelectedClasses(classChoices.filter((c) => c !== 'Semua Kelas').slice(0, 1));
       } else {
         setSelectedClasses(['Semua Kelas']);
       }
@@ -141,7 +213,12 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
     setSelectedClasses(next);
   };
 
-  // Generate next automatic token (Token 1, Token 2, Token 3, Token 4, dst.)
+  const toggleStudentSelection = (siswaId: string) => {
+    setSelectedStudentIds((prev) =>
+      prev.includes(siswaId) ? prev.filter((id) => id !== siswaId) : [...prev, siswaId]
+    );
+  };
+
   const handleGenerateNextToken = () => {
     const nextNomor = tokenList.length + 1;
     const newTokenCode = generateRandomTokenCode();
@@ -152,7 +229,7 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
       label: `Token ${nextNomor}`,
       token: newTokenCode,
       createdAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + 10 * 60 * 1000).toISOString(), // 10 minutes from now
+      expiresAt: new Date(now + 10 * 60 * 1000).toISOString(),
       isCustom: false,
     };
 
@@ -160,7 +237,6 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
     setUseToken(true);
   };
 
-  // Create custom token by teacher
   const handleAddCustomToken = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const clean = customTokenInput.trim().toUpperCase();
@@ -174,7 +250,7 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
       label: `Token ${nextNomor}`,
       token: clean,
       createdAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + 10 * 60 * 1000).toISOString(), // 10 minutes from now
+      expiresAt: new Date(now + 10 * 60 * 1000).toISOString(),
       isCustom: true,
     };
 
@@ -183,7 +259,6 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
     setUseToken(true);
   };
 
-  // Extend token by +10 minutes
   const handleExtendToken = (tokenId: string) => {
     setTokenList((prev) =>
       prev.map((t) => {
@@ -199,7 +274,6 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
     );
   };
 
-  // Delete token
   const handleDeleteToken = (tokenId: string) => {
     setTokenList((prev) => prev.filter((t) => t.id !== tokenId));
   };
@@ -216,14 +290,13 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
       return;
     }
     const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
     if (tipe === 'sekarang') {
-      const pad = (n: number) => String(n).padStart(2, '0');
       setWaktuMulai(
         `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
       );
     } else if (tipe === 'besok_pagi') {
       d.setDate(d.getDate() + 1);
-      const pad = (n: number) => String(n).padStart(2, '0');
       setWaktuMulai(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T07:30`);
     }
   };
@@ -247,8 +320,11 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (targetMode === 'students' && selectedStudentIds.length === 0) {
+      alert('Pilih minimal 1 siswa jika menggunakan mode "Siswa Tertentu Saja"!');
+      return;
+    }
 
-    // Active token is the first active one, or first token in list
     const activeValid = tokenList.find((t) => new Date(t.expiresAt).getTime() > Date.now());
     const primaryToken = activeValid ? activeValid.token : tokenList[0]?.token;
 
@@ -256,6 +332,7 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
       ...exam,
       status,
       kelasTarget: selectedClasses,
+      targetSiswaIds: targetMode === 'students' ? selectedStudentIds : undefined,
       waktuMulai: waktuMulai.trim() || undefined,
       waktuKadaluarsa: waktuKadaluarsa.trim() || undefined,
       useToken,
@@ -286,7 +363,7 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
               <Settings className="w-5 h-5 text-indigo-300" />
             </div>
             <div>
-              <h3 className="text-base font-bold leading-tight">Setting Soal, Jadwal & Multi-Token Ujian</h3>
+              <h3 className="text-base font-bold leading-tight">Setting Soal, Peserta, Jadwal & Multi-Token</h3>
               <p className="text-xs text-indigo-200 truncate max-w-md">{exam.judul}</p>
             </div>
           </div>
@@ -313,10 +390,10 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <label className="text-xs font-bold text-slate-900 block mb-0.5">
-                  Status Akses Ujian (Aktif / Nonaktif)
+                  Status Akses Ujian / Tugas (Aktif / Nonaktif)
                 </label>
                 <p className="text-[11px] text-slate-500">
-                  Ujian yang aktif dapat dilihat dan dikerjakan oleh siswa di kelas target.
+                  Asesmen yang aktif dapat dilihat dan dikerjakan oleh peserta di kelas/siswa sasaran.
                 </p>
               </div>
 
@@ -349,16 +426,20 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
             </div>
           </div>
 
-          {/* 2. PILIH KELAS SASARAN (Tinggal Pilih Kelas) */}
+          {/* 2. PILIH KELAS SASARAN (Khusus kelas yang diajar jika role guru) */}
           <div className="p-4 bg-indigo-50/50 border border-indigo-200/80 rounded-2xl space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <h4 className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
                   <School className="w-4 h-4 text-indigo-600" />
-                  <span>Kelas Sasaran Ujian (Tinggal Pilih Rombel)</span>
+                  <span>
+                    {isTeacher
+                      ? 'Kelas Sasaran (Khusus Kelas yang Anda Ajar)'
+                      : 'Kelas Sasaran Ujian (Tinggal Pilih Rombel)'}
+                  </span>
                 </h4>
                 <p className="text-[11px] text-indigo-900/80 mt-0.5">
-                  Klik kelas di bawah untuk memilih rombel yang diizinkan mengikuti asesmen ini.
+                  Klik kelas di bawah untuk memilih rombel yang diizinkan mengikuti asesmen/tugas ini.
                 </p>
               </div>
               <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
@@ -368,29 +449,142 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
               </span>
             </div>
 
-            <div className="flex flex-wrap gap-2 pt-1">
-              {classChoices.map((cls) => {
-                const isSelected = selectedClasses.includes(cls);
-                return (
+            {classChoices.length === 0 ? (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px]">
+                Belum ada kelas yang di-plotting ke akun Anda. Hubungi Administrator untuk mengatur kelas ajar.
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {classChoices.map((cls) => {
+                  const isSelected = selectedClasses.includes(cls);
+                  return (
+                    <button
+                      key={cls}
+                      type="button"
+                      onClick={() => toggleClass(cls)}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-400/30'
+                          : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400'
+                      }`}
+                    >
+                      {isSelected ? (
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      ) : (
+                        <span className="w-3.5 h-3.5 rounded-full border border-slate-300" />
+                      )}
+                      <span>{cls}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Target Mode: Seluruh Siswa di Kelas vs Siswa Tertentu Saja */}
+            <div className="pt-3 border-t border-indigo-200/80 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Target Peserta Siswa</span>
+                  </span>
+                  <span className="text-[10px] text-slate-600">
+                    Bisa diberikan ke seluruh siswa kelas terpilih atau siswa tertentu saja (misal remedial/susulan).
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-indigo-200">
                   <button
-                    key={cls}
                     type="button"
-                    onClick={() => toggleClass(cls)}
-                    className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer ${
-                      isSelected
-                        ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-400/30'
-                        : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400'
+                    onClick={() => setTargetMode('class')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                      targetMode === 'class'
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    {isSelected ? (
-                      <Check className="w-3.5 h-3.5 stroke-[3]" />
-                    ) : (
-                      <span className="w-3.5 h-3.5 rounded-full border border-slate-300" />
-                    )}
-                    <span>{cls}</span>
+                    Semua Siswa di Kelas
                   </button>
-                );
-              })}
+                  <button
+                    type="button"
+                    onClick={() => setTargetMode('students')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                      targetMode === 'students'
+                        ? 'bg-amber-600 text-white'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Siswa Tertentu ({selectedStudentIds.length})
+                  </button>
+                </div>
+              </div>
+
+              {targetMode === 'students' && (
+                <div className="bg-white rounded-2xl border border-indigo-200 p-3 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                      <input
+                        type="text"
+                        value={studentSearch}
+                        onChange={(e) => setStudentSearch(e.target.value)}
+                        placeholder="Cari nama atau NISN siswa..."
+                        className="w-full pl-8 pr-3 py-1.5 text-[11px] bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStudentIds(studentsInSelectedClasses.map((s) => s.id))}
+                        className="px-2 py-1 text-[10px] font-bold rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 cursor-pointer"
+                      >
+                        Pilih Semua
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStudentIds([])}
+                        className="px-2 py-1 text-[10px] font-bold rounded bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer"
+                      >
+                        Kosongkan
+                      </button>
+                    </div>
+                  </div>
+
+                  {filteredStudentCandidates.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 text-center py-3">
+                      Tidak ada data siswa pada kelas sasaran terpilih.
+                    </p>
+                  ) : (
+                    <div className="max-h-40 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5 pr-1">
+                      {filteredStudentCandidates.map((st) => {
+                        const checked = selectedStudentIds.includes(st.id);
+                        return (
+                          <label
+                            key={st.id}
+                            className={`flex items-center gap-2 p-2 rounded-xl border text-[11px] cursor-pointer transition ${
+                              checked
+                                ? 'bg-amber-50 border-amber-300 text-amber-950 font-semibold'
+                                : 'bg-slate-50/70 border-slate-200 text-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleStudentSelection(st.id)}
+                              className="rounded border-slate-300 text-amber-600"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-bold">{st.name}</div>
+                              <div className="text-[10px] text-slate-500 font-mono">
+                                {st.kelas} • {st.nisn || `@${st.username}`}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -407,7 +601,6 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Waktu Mulai */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
                   Waktu Mulai Aktif
@@ -445,7 +638,6 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* Waktu Kadaluarsa */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
                   Waktu Kadaluarsa (Batas Selesai)
@@ -492,7 +684,7 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
             </div>
           </div>
 
-          {/* 4. MULTI-TOKEN DENGAN GENERATE & EXPIRED 10 MENIT + TOKEN CUSTOM */}
+          {/* 4. MULTI-TOKEN */}
           <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -518,9 +710,7 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
 
             {useToken && (
               <div className="space-y-4 pt-2 border-t border-indigo-200/80">
-                {/* Generation & Custom Token Input Bar */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white p-3.5 rounded-2xl border border-indigo-200 shadow-xs">
-                  {/* Option A: Generate Token Otomatis */}
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 mb-1">
                       Generate Token Otomatis (Token {tokenList.length + 1})
@@ -533,12 +723,8 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
                       <Zap className="w-4 h-4 text-amber-300" />
                       <span>Generate Token {tokenList.length + 1} (Acak 10 Menit)</span>
                     </button>
-                    <span className="text-[10px] text-slate-500 mt-1 block">
-                      Membuat token acak berikutnya yang aktif selama 10 menit.
-                    </span>
                   </div>
 
-                  {/* Option B: Buat Token Custom Sendiri */}
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 mb-1">
                       Atau Buat Token Custom Sendiri
@@ -567,13 +753,9 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
                         + Tambah
                       </button>
                     </div>
-                    <span className="text-[10px] text-slate-500 mt-1 block">
-                      Guru bebas menentukan teks token sendiri dengan masa berlaku 10 menit.
-                    </span>
                   </div>
                 </div>
 
-                {/* List of Generated Tokens */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 px-1">
                     <span>Daftar Token Ujian ({tokenList.length} Token)</span>
@@ -619,7 +801,6 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
                             </div>
 
                             <div className="flex items-center gap-2">
-                              {/* Expiry Badge */}
                               {isExpired ? (
                                 <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
                                   <AlertCircle className="w-3 h-3 text-rose-600" />
@@ -632,7 +813,6 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
                                 </span>
                               )}
 
-                              {/* Actions */}
                               <button
                                 type="button"
                                 onClick={() => handleCopyToken(tok)}

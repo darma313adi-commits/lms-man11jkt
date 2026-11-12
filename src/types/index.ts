@@ -109,6 +109,7 @@ export interface Exam {
   deskripsi: string;
   mataPelajaran: string;
   kelasTarget: string[];
+  targetSiswaIds?: string[]; // Opsional: jika diisi, ujian/tugas hanya diberikan kepada siswa tertentu dalam kelas sasaran
   durasiMenit: number;
   guruId: string;
   guruNama: string;
@@ -116,7 +117,7 @@ export interface Exam {
   kodeUjian: string;
   soalList: QuestionItem[];
   kkm: number;
-  jenisAsesmen?: 'sumatif_lingkup_materi' | 'sumatif_akhir_semester' | 'formatif';
+  jenisAsesmen?: 'sumatif_lingkup_materi' | 'sumatif_akhir_semester' | 'formatif' | 'tugas';
   acakSoal?: boolean;
   acakOpsi?: boolean;
   tampilkanNilai?: boolean;
@@ -192,4 +193,27 @@ export interface ItemAnalysis {
   dayaPembeda: number; // -1.0 to 1.0
   kategoriDayaPembeda: 'Sangat Baik' | 'Baik' | 'Cukup' | 'Jelek / Revisi';
   distribusiPilihan?: Record<string, number>;
+}
+
+export type AttendanceStatus = 'Hadir' | 'Izin' | 'Sakit' | 'Alpa';
+
+export interface StudentAttendanceEntry {
+  siswaId: string;
+  siswaNama: string;
+  siswaNisn?: string;
+  status: AttendanceStatus;
+  keterangan?: string;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  tanggal: string; // YYYY-MM-DD
+  kelasNama: string;
+  mataPelajaran: string;
+  guruId: string;
+  guruNama: string;
+  materiTopik?: string;
+  records: Record<string, StudentAttendanceEntry>;
+  createdAt: string;
+  updatedAt: string;
 }

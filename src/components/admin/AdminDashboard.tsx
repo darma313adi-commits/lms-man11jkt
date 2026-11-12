@@ -2193,7 +2193,7 @@ export const AdminDashboard: React.FC = () => {
 
                               if (
                                 confirm(
-                                  `PERINGATAN RESET KELAS!\n\nApakah Anda yakin ingin mereset ujian seluruh siswa di kelas "${adminParticipantClassFilter}" (${countInClass} siswa)?\n\nSemua lembar jawaban dan skor siswa kelas ${adminParticipantClassFilter} pada ujian "${selectedExamForParticipants.judul}" akan dihapus dari server Firestore. Siswa dapat login kembali dan mengulang ujian.`
+                                  `PERINGATAN RESET KELAS!\n\nApakah Anda yakin ingin mereset ujian seluruh siswa di kelas "${adminParticipantClassFilter}" (${countInClass} siswa)?\n\nSemua lembar jawaban dan skor siswa kelas ${adminParticipantClassFilter} pada ujian "${selectedExamForParticipants.judul}" akan dihapus dari server Realtime Database. Siswa dapat login kembali dan mengulang ujian.`
                                 )
                               ) {
                                 resetExamParticipantsByClass(
@@ -2317,7 +2317,7 @@ export const AdminDashboard: React.FC = () => {
                                 onClick={() => {
                                   if (
                                     confirm(
-                                      `Yakin ingin mereset ujian siswa "${sub.siswaNama}" (${sub.siswaKelas})?\n\nLembar jawaban dan skor siswa ini akan dihapus dari Firestore. Siswa dapat login kembali dan mengulang ujian ini dari awal.`
+                                      `Yakin ingin mereset ujian siswa "${sub.siswaNama}" (${sub.siswaKelas})?\n\nLembar jawaban dan skor siswa ini akan dihapus dari Realtime Database. Siswa dapat login kembali dan mengulang ujian ini dari awal.`
                                     )
                                   ) {
                                     resetExamSubmission(sub.id);

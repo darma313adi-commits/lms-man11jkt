@@ -19,23 +19,75 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-export const DaftarSiswaPerKelas: React.FC = () => {
-  const { users, submissions, exams, currentUser } = useLMS();
+export const DaftarSiswaPerKelas: React.FC<{ initialClass?: string | null }> = ({ initialClass }) => {
+  const { users, submissions, exams, currentUser, kelasMapelPengampuList } = useLMS();
+  const isTeacher = currentUser?.role === 'guru';
 
-  // All student users
+  // Classes strictly taught by this teacher
+  const teacherTaughtClasses = useMemo(() => {
+    if (!isTeacher || !currentUser) return [];
+    const fromProfile = currentUser.kelasAjar || [];
+    const fromPlotting = kelasMapelPengampuList
+      .filter(
+        (k) =>
+          k.guruId === currentUser.id ||
+          (k.guruNama &&
+            currentUser.name &&
+            k.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+      )
+      .map((k) => k.kelasNama);
+
+    return Array.from(
+      new Set([...fromProfile, ...fromPlotting].map((k) => k.trim()).filter(Boolean))
+    ).sort();
+  }, [isTeacher, currentUser, kelasMapelPengampuList]);
+
+  // Exams owned by this teacher (used to isolate grade/submission visibility for teachers)
+  const myExamIds = useMemo(() => {
+    if (!isTeacher || !currentUser) return null;
+    return new Set(
+      exams
+        .filter(
+          (e) =>
+            e.guruId === currentUser.id ||
+            (e.guruNama &&
+              currentUser.name &&
+              e.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+        )
+        .map((e) => e.id)
+    );
+  }, [isTeacher, currentUser, exams]);
+
+  const scopedSubmissions = useMemo(() => {
+    if (!myExamIds) return submissions;
+    return submissions.filter((s) => myExamIds.has(s.examId));
+  }, [submissions, myExamIds]);
+
+  // Students filtered strictly to taught classes when role is guru
   const allStudents = useMemo(() => {
-    return users.filter((u) => u.role === 'siswa');
-  }, [users]);
+    const rawStudents = users.filter((u) => u.role === 'siswa');
+    if (!isTeacher) return rawStudents;
+    const allowedSet = new Set(teacherTaughtClasses.map((c) => c.toLowerCase()));
+    return rawStudents.filter((s) => s.kelas && allowedSet.has(s.kelas.trim().toLowerCase()));
+  }, [users, isTeacher, teacherTaughtClasses]);
 
   // Distinct classes list
   const classesList = useMemo(() => {
+    if (isTeacher) {
+      return teacherTaughtClasses;
+    }
     const list = Array.from(
       new Set(allStudents.map((s) => s.kelas?.trim()).filter(Boolean) as string[])
     ).sort();
     return list.length > 0 ? list : ['X 3', 'X 4', 'XII 3', 'XII 4'];
-  }, [allStudents]);
+  }, [isTeacher, teacherTaughtClasses, allStudents]);
 
-  const [selectedClass, setSelectedClass] = useState<string>('all');
+  const [selectedClass, setSelectedClass] = useState<string>(() => {
+    if (initialClass && (!isTeacher || teacherTaughtClasses.some((c) => c.toLowerCase() === initialClass.toLowerCase()))) {
+      return initialClass;
+    }
+    return 'all';
+  });
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<User | null>(null);
 
@@ -68,7 +120,7 @@ export const DaftarSiswaPerKelas: React.FC = () => {
     const studentIds = new Set(studentsInClass.map((s) => s.id));
     const studentNames = new Set(studentsInClass.map((s) => s.name.toLowerCase()));
 
-    const classSubs = submissions.filter(
+    const classSubs = scopedSubmissions.filter(
       (sub) => studentIds.has(sub.siswaId) || studentNames.has(sub.siswaNama.toLowerCase())
     );
 
@@ -85,11 +137,11 @@ export const DaftarSiswaPerKelas: React.FC = () => {
       totalSubs: classSubs.length,
       avgScore,
     };
-  }, [allStudents, selectedClass, submissions]);
+  }, [allStudents, selectedClass, scopedSubmissions]);
 
   const handleExportExcel = () => {
     const dataToExport = filteredStudents.map((s, idx) => {
-      const studentSubs = submissions.filter(
+      const studentSubs = scopedSubmissions.filter(
         (sub) => sub.siswaId === s.id || sub.siswaNama.toLowerCase() === s.name.toLowerCase()
       );
       const avg =
@@ -156,7 +208,7 @@ export const DaftarSiswaPerKelas: React.FC = () => {
               : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
           }`}
         >
-          Semua Kelas ({allStudents.length})
+          {isTeacher ? `Semua Kelas Ajar (${allStudents.length})` : `Semua Kelas (${allStudents.length})`}
         </button>
 
         {classesList.map((cls) => {
@@ -259,9 +311,15 @@ export const DaftarSiswaPerKelas: React.FC = () => {
         {filteredStudents.length === 0 ? (
           <div className="p-12 text-center">
             <Users className="w-12 h-12 text-slate-300 mx-auto mb-2" />
-            <h4 className="text-sm font-bold text-slate-800">Tidak ada siswa yang cocok</h4>
+            <h4 className="text-sm font-bold text-slate-800">
+              {isTeacher && classesList.length === 0
+                ? 'Belum Ada Kelas Ajar Terplotting'
+                : 'Tidak ada siswa yang cocok'}
+            </h4>
             <p className="text-xs text-slate-500 mt-1">
-              Periksa filter kelas atau kata kunci pencarian Anda.
+              {isTeacher && classesList.length === 0
+                ? 'Akun Anda belum ditetapkan ke kelas mengajar. Silakan hubungi Admin Madrasah untuk plotting kelas ajar.'
+                : 'Periksa filter kelas atau kata kunci pencarian Anda.'}
             </p>
           </div>
         ) : (
@@ -281,7 +339,7 @@ export const DaftarSiswaPerKelas: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredStudents.map((s, idx) => {
-                  const studentSubs = submissions.filter(
+                  const studentSubs = scopedSubmissions.filter(
                     (sub) =>
                       sub.siswaId === s.id || sub.siswaNama.toLowerCase() === s.name.toLowerCase()
                   );
@@ -394,7 +452,7 @@ export const DaftarSiswaPerKelas: React.FC = () => {
 
             <div className="p-6 overflow-y-auto space-y-4 flex-1 text-xs">
               {(() => {
-                const studentSubs = submissions.filter(
+                const studentSubs = scopedSubmissions.filter(
                   (sub) =>
                     sub.siswaId === selectedStudentForDetail.id ||
                     sub.siswaNama.toLowerCase() === selectedStudentForDetail.name.toLowerCase()

@@ -534,6 +534,20 @@ export function exportGradesExcel(submissions: ExamSubmission[], exam: Exam, cla
 
   const rows = filteredSubs.map((sub, i) => {
     const isLulus = sub.nilai100 >= exam.kkm;
+    const violations = sub.violations || [];
+    const detailCurang =
+      violations.length > 0
+        ? violations
+            .map(
+              (v, idx) =>
+                `[${idx + 1}] ${new Date(v.timestamp).toLocaleTimeString('id-ID', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })} (${v.tipe.toUpperCase()}): ${v.deskripsi}`
+            )
+            .join(' | ')
+        : 'Tidak ada pelanggaran';
     return {
       'No': i + 1,
       'Nama Siswa': sub.siswaNama,
@@ -546,7 +560,9 @@ export function exportGradesExcel(submissions: ExamSubmission[], exam: Exam, cla
       'Nilai (/100)': sub.nilai100,
       'KKM': exam.kkm,
       'Status Kelulusan': isLulus ? 'TUNTAS' : 'REMIDI',
-      'Pelanggaran Curang': sub.violations?.length || 0,
+      'Pelanggaran Curang': violations.length,
+      'Status Kecurangan': violations.length > 0 ? `TERDETEKSI (${violations.length}x)` : 'BERSIH',
+      'Detail Laporan Kecurangan': detailCurang,
       'Status Pengerjaan': sub.status === 'sudah_dikumpulkan' ? 'Selesai' : 'Sedang Mengerjakan',
       'Jam Login': sub.waktuMulai ? new Date(sub.waktuMulai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-',
       'Jam Kirim Jawaban': sub.waktuSelesai ? new Date(sub.waktuSelesai).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-',

@@ -199,7 +199,7 @@ export const LoginView: React.FC = () => {
         {/* Cloud Sync Status Indicator */}
         <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-white/10 backdrop-blur-md border border-white/15 text-indigo-100">
           <span className={`w-2 h-2 rounded-full ${isCloudSynced ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-          <span>{isCloudSynced ? 'Cloud Firestore Aktif • Sinkron Real-time Antar Perangkat' : 'Menghubungkan ke Cloud Firestore...'}</span>
+          <span>{isCloudSynced ? 'Firebase Realtime Database Aktif • Sinkron Real-time Antar Perangkat' : 'Menghubungkan ke Realtime Database...'}</span>
         </div>
       </div>
 
@@ -425,11 +425,25 @@ export const LoginView: React.FC = () => {
                     ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/25'
                     : activePortal === 'guru'
                     ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25'
+                    : activePortal === 'kepala_madrasah'
+                    ? 'bg-purple-700 hover:bg-purple-800 shadow-purple-500/25'
                     : 'bg-rose-600 hover:bg-rose-700 shadow-rose-500/25'
                 } ${loading ? 'opacity-70 cursor-wait' : ''}`}
               >
                 <LogIn className="w-4 h-4" />
-                <span>{loading ? 'Memverifikasi...' : `Masuk ke Portal ${activePortal === 'siswa' ? 'Siswa' : activePortal === 'guru' ? 'Guru' : 'Admin'}`}</span>
+                <span>
+                  {loading
+                    ? 'Memverifikasi...'
+                    : `Masuk ke Portal ${
+                        activePortal === 'siswa'
+                          ? 'Siswa'
+                          : activePortal === 'guru'
+                          ? 'Guru'
+                          : activePortal === 'kepala_madrasah'
+                          ? 'Kepala Madrasah'
+                          : 'Admin'
+                      }`}
+                </span>
               </button>
             </form>
 

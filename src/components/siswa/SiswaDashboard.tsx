@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 export const SiswaDashboard: React.FC = () => {
-  const { currentUser, exams, submissions, startExamSession, materials } = useLMS();
+  const { currentUser, exams, submissions, startExamSession, materials, loadLocalExamDraft } = useLMS();
   const [selectedExamToStart, setSelectedExamToStart] = useState<Exam | null>(null);
   const [activeTab, setActiveTab] = useState<'aktif' | 'materi' | 'riwayat'>('aktif');
   const [previewMaterial, setPreviewMaterial] = useState<LessonMaterial | null>(null);
@@ -35,14 +35,22 @@ export const SiswaDashboard: React.FC = () => {
 
   if (!currentUser) return null;
 
-  // Filter exams targetting this student's class
-  const studentClass = currentUser.kelas || 'X 1';
-  const availableExams = exams.filter(
-    (ex) =>
+  // Filter exams targetting this student's class AND optional specific student selection (targetSiswaIds)
+  const studentClass = currentUser.kelas || 'XII 3';
+  const availableExams = exams.filter((ex) => {
+    if (ex.targetSiswaIds && ex.targetSiswaIds.length > 0) {
+      return ex.targetSiswaIds.includes(currentUser.id);
+    }
+    return (
       ex.kelasTarget.includes(studentClass) ||
-      ex.kelasTarget.some((k) => studentClass.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(studentClass.toLowerCase())) ||
+      ex.kelasTarget.some(
+        (k) =>
+          studentClass.toLowerCase().includes(k.toLowerCase()) ||
+          k.toLowerCase().includes(studentClass.toLowerCase())
+      ) ||
       ex.kelasTarget.includes('Semua Kelas')
-  );
+    );
+  });
 
   // Filter materials for this student's class
   const availableMaterials = materials.filter(
@@ -242,6 +250,16 @@ export const SiswaDashboard: React.FC = () => {
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                             {exam.mataPelajaran}
                           </span>
+                          {exam.jenisAsesmen === 'tugas' && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                              📝 Tugas
+                            </span>
+                          )}
+                          {exam.targetSiswaIds && exam.targetSiswaIds.length > 0 && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                              🎯 Khusus Anda
+                            </span>
+                          )}
                           {!isExamActive ? (
                             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
                               🔴 Nonaktif
@@ -353,15 +371,44 @@ export const SiswaDashboard: React.FC = () => {
                           <XCircle className="w-4 h-4 text-slate-400" />
                           <span>Waktu Ujian Telah Berakhir</span>
                         </div>
-                      ) : (
-                        <button
-                          onClick={() => handleOpenStartExamModal(exam)}
-                          className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition"
-                        >
-                          {exam.useToken ? <Key className="w-4 h-4" /> : <Play className="w-4 h-4 fill-white" />}
-                          <span>{exam.useToken ? 'Masukkan Token & Mulai Ujian' : 'Mulai Mengerjakan Ujian'}</span>
-                        </button>
-                      )}
+                      ) : (() => {
+                        const localDraft = loadLocalExamDraft(exam.id, currentUser.id);
+                        const savedLocalCount = localDraft
+                          ? Object.values(localDraft.jawabanMap || {}).filter((a) => {
+                              if (!a || a.jawaban === undefined || a.jawaban === null || a.jawaban === '') return false;
+                              if (Array.isArray(a.jawaban)) return a.jawaban.length > 0;
+                              if (typeof a.jawaban === 'object') return Object.keys(a.jawaban).length > 0;
+                              return true;
+                            }).length
+                          : 0;
+                        return (
+                          <div className="space-y-2">
+                            {savedLocalCount > 0 && (
+                              <div className="px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-[11px] font-semibold text-indigo-800 flex items-center justify-between">
+                                <span>💾 {savedLocalCount} jawaban tersimpan lokal di perangkat</span>
+                                <span className="text-indigo-600 font-bold">Siap dilanjutkan</span>
+                              </div>
+                            )}
+                            <button
+                              onClick={() => handleOpenStartExamModal(exam)}
+                              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition cursor-pointer"
+                            >
+                              {exam.useToken ? <Key className="w-4 h-4" /> : <Play className="w-4 h-4 fill-white" />}
+                              <span>
+                                {savedLocalCount > 0
+                                  ? exam.useToken
+                                    ? 'Masukkan Token & Lanjutkan Ujian'
+                                    : 'Lanjutkan Mengerjakan'
+                                  : exam.useToken
+                                  ? 'Masukkan Token & Mulai Ujian'
+                                  : exam.jenisAsesmen === 'tugas'
+                                  ? 'Mulai Mengerjakan Tugas'
+                                  : 'Mulai Mengerjakan Ujian'}
+                              </span>
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );

@@ -546,14 +546,26 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
   const {
     currentUser,
     updateStudentAnswer,
+    updateLocalExamProgress,
+    loadLocalExamDraft,
     recordCheatingViolation,
     finishAndSubmitExam,
     exitExamPlayer,
     logout,
   } = useLMS();
 
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState<number>(() => {
+    const draft = loadLocalExamDraft(exam.id, submission.siswaId);
+    if (draft && typeof draft.currentIndex === 'number') {
+      return Math.max(0, Math.min(draft.currentIndex, Math.max(0, exam.soalList.length - 1)));
+    }
+    return 0;
+  });
   const [secondsRemaining, setSecondsRemaining] = useState<number>(() => {
+    const draft = loadLocalExamDraft(exam.id, submission.siswaId);
+    if (draft && typeof draft.sisaWaktuDetik === 'number' && draft.sisaWaktuDetik > 0) {
+      return draft.sisaWaktuDetik;
+    }
     return submission.sisaWaktuDetik || exam.durasiMenit * 60;
   });
 
@@ -729,6 +741,29 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
     };
   }, []);
 
+  // Persist currentIndex & remaining time to device-local draft
+  const progressRef = useRef({ secondsRemaining, currentIndex, isExamCompleted });
+  progressRef.current = { secondsRemaining, currentIndex, isExamCompleted };
+
+  useEffect(() => {
+    if (!isExamCompleted) {
+      updateLocalExamProgress(progressRef.current.secondsRemaining, currentIndex);
+    }
+  }, [currentIndex, isExamCompleted]);
+
+  useEffect(() => {
+    const persistProgress = () => {
+      if (!progressRef.current.isExamCompleted) {
+        updateLocalExamProgress(progressRef.current.secondsRemaining, progressRef.current.currentIndex);
+      }
+    };
+    window.addEventListener('beforeunload', persistProgress);
+    return () => {
+      persistProgress();
+      window.removeEventListener('beforeunload', persistProgress);
+    };
+  }, []);
+
   // Timer countdown
   useEffect(() => {
     if (isExamCompleted) return;
@@ -740,7 +775,11 @@ export const ExamPlayer: React.FC<ExamPlayerProps> = ({ exam, submission }) => {
           handleAutoSubmit();
           return 0;
         }
-        return prev - 1;
+        const next = prev - 1;
+        if (next % 5 === 0) {
+          updateLocalExamProgress(next, progressRef.current.currentIndex);
+        }
+        return next;
       });
     }, 1000);
 
