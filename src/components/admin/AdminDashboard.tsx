@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useLMS } from '../../context/LMSContext';
 import { User, UserRole, Exam, LessonMaterial } from '../../types';
 import {
@@ -64,6 +64,7 @@ import { DaftarSiswaPerKelas } from '../guru/DaftarSiswaPerKelas';
 
 export const AdminDashboard: React.FC = () => {
   const {
+    currentUser,
     users,
     addUser,
     updateUser,
@@ -81,10 +82,21 @@ export const AdminDashboard: React.FC = () => {
     rombelList,
     mataPelajaranList,
     kelasMapelPengampuList,
+    portalSettings,
+    updatePortalSettings,
   } = useLMS();
 
   const [activeTab, setActiveTab] = useState<
-    'daftar' | 'siswa_kelas' | 'rombel' | 'mapel' | 'plotting' | 'asesmen_guru' | 'materi_guru' | 'import' | 'manual'
+    | 'daftar'
+    | 'admin_accounts'
+    | 'siswa_kelas'
+    | 'rombel'
+    | 'mapel'
+    | 'plotting'
+    | 'asesmen_guru'
+    | 'materi_guru'
+    | 'import'
+    | 'manual'
   >('daftar');
   const [navOrientation, setNavOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
   const [plottingTargetKelas, setPlottingTargetKelas] = useState<string>('X 1');
@@ -136,6 +148,91 @@ export const AdminDashboard: React.FC = () => {
   const [pastedPdfText, setPastedPdfText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Portal Open/Close Control State (settings/portal)
+  const [portalMessageDraft, setPortalMessageDraft] = useState<string>(
+    portalSettings.closedMessage
+  );
+  const [isSavingPortal, setIsSavingPortal] = useState<boolean>(false);
+  const [portalFeedback, setPortalFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  // Multi-Admin Management State
+  const [newAdminForm, setNewAdminForm] = useState({
+    name: '',
+    username: '',
+    nip: '',
+    email: '',
+    password: '',
+  });
+  const [showNewAdminPassword, setShowNewAdminPassword] = useState(false);
+  const [adminActionFeedback, setAdminActionFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+  const [passwordEditTarget, setPasswordEditTarget] = useState<User | null>(null);
+  const [newAdminPasswordInput, setNewAdminPasswordInput] = useState('');
+  const [showAdminPasswords, setShowAdminPasswords] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setPortalMessageDraft(portalSettings.closedMessage);
+  }, [portalSettings.closedMessage]);
+
+  const handleTogglePortal = async () => {
+    const nextIsOpen = !portalSettings.isOpen;
+    const cleanMsg = portalMessageDraft.trim() || portalSettings.closedMessage;
+    setIsSavingPortal(true);
+    setPortalFeedback(null);
+    const res = await updatePortalSettings({
+      isOpen: nextIsOpen,
+      closedMessage: cleanMsg,
+    });
+    setIsSavingPortal(false);
+    if (res.success) {
+      setPortalFeedback({
+        type: 'success',
+        text: nextIsOpen
+          ? 'Portal berhasil DIBUKA (hijau). Siswa dan Guru kini dapat login seperti biasa.'
+          : 'Portal berhasil DITUTUP (merah). Akses login Siswa & Guru kini diblokir.',
+      });
+    } else {
+      setPortalFeedback({
+        type: 'error',
+        text: res.error || 'Gagal memperbarui status portal di Cloud Firestore.',
+      });
+    }
+  };
+
+  const handleSavePortalMessage = async () => {
+    const cleanMsg = portalMessageDraft.trim();
+    if (!cleanMsg) {
+      setPortalFeedback({
+        type: 'error',
+        text: 'Pesan pengumuman penutupan portal tidak boleh kosong.',
+      });
+      return;
+    }
+    setIsSavingPortal(true);
+    setPortalFeedback(null);
+    const res = await updatePortalSettings({
+      isOpen: portalSettings.isOpen,
+      closedMessage: cleanMsg,
+    });
+    setIsSavingPortal(false);
+    if (res.success) {
+      setPortalFeedback({
+        type: 'success',
+        text: 'Pesan pengumuman penutupan portal berhasil disimpan ke Cloud Firestore!',
+      });
+    } else {
+      setPortalFeedback({
+        type: 'error',
+        text: res.error || 'Gagal menyimpan pesan pengumuman ke Cloud Firestore.',
+      });
+    }
+  };
+
   // Derived unique classes from rombelList and users, sorted X -> XI -> XII
   const classesList = Array.from(
     new Set([
@@ -150,8 +247,131 @@ export const AdminDashboard: React.FC = () => {
     return ra !== rb ? ra - rb : a.localeCompare(b, 'id-ID', { numeric: true });
   });
 
+  const adminUsers = users.filter((u) => u.role === 'admin');
   const teachersCount = users.filter((u) => u.role === 'guru').length;
   const studentsCount = users.filter((u) => u.role === 'siswa').length;
+
+  const handleCreateAdminAccount = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminActionFeedback(null);
+
+    const cleanName = newAdminForm.name.trim();
+    const cleanUsername = newAdminForm.username.trim().toLowerCase().replace(/\s+/g, '_');
+    const cleanPassword = newAdminForm.password.trim();
+    const cleanNip = newAdminForm.nip.trim();
+    const cleanEmail = newAdminForm.email.trim();
+
+    if (!cleanName || !cleanUsername || !cleanPassword) {
+      setAdminActionFeedback({
+        type: 'error',
+        text: 'Nama Lengkap, Username, dan Password wajib diisi.',
+      });
+      return;
+    }
+
+    if (cleanPassword.length < 4) {
+      setAdminActionFeedback({
+        type: 'error',
+        text: 'Password minimal 4 karakter demi keamanan akun Administrator.',
+      });
+      return;
+    }
+
+    const isDuplicate = users.some(
+      (u) =>
+        u.username.toLowerCase() === cleanUsername ||
+        (cleanEmail && (u.email || '').toLowerCase() === cleanEmail.toLowerCase()) ||
+        (cleanNip && (u.nip || '').toLowerCase() === cleanNip.toLowerCase())
+    );
+    if (isDuplicate) {
+      setAdminActionFeedback({
+        type: 'error',
+        text: 'Username, NIP, atau Email sudah digunakan oleh pengguna lain. Gunakan identitas berbeda.',
+      });
+      return;
+    }
+
+    addUser({
+      name: cleanName,
+      username: cleanUsername,
+      password: cleanPassword,
+      role: 'admin',
+      nip: cleanNip || undefined,
+      email: cleanEmail || `${cleanUsername}@man11jakarta.sch.id`,
+      status: 'aktif',
+    });
+
+    setNewAdminForm({
+      name: '',
+      username: '',
+      nip: '',
+      email: '',
+      password: '',
+    });
+
+    setAdminActionFeedback({
+      type: 'success',
+      text: `Akun Admin baru "${cleanName}" (@${cleanUsername}) berhasil ditambahkan ke Cloud Firestore dan dapat langsung login meskipun portal ditutup.`,
+    });
+  };
+
+  const handleSaveAdminPasswordChange = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordEditTarget) return;
+    const trimmedPass = newAdminPasswordInput.trim();
+    if (trimmedPass.length < 4) {
+      setAdminActionFeedback({
+        type: 'error',
+        text: 'Password baru minimal 4 karakter.',
+      });
+      return;
+    }
+    updateUser({
+      ...passwordEditTarget,
+      password: trimmedPass,
+    });
+    setAdminActionFeedback({
+      type: 'success',
+      text: `Password untuk akun Admin "${passwordEditTarget.name}" (@${passwordEditTarget.username}) berhasil diperbarui di Cloud Firestore.`,
+    });
+    setPasswordEditTarget(null);
+    setNewAdminPasswordInput('');
+  };
+
+  const handleDeleteAdminAccount = (target: User) => {
+    if (adminUsers.length <= 1) {
+      setAdminActionFeedback({
+        type: 'error',
+        text: 'Tidak dapat menghapus: sistem wajib memiliki minimal 1 akun Admin.',
+      });
+      return;
+    }
+    if (target.username === 'darma313adi') {
+      setAdminActionFeedback({
+        type: 'error',
+        text: 'Akun Admin utama bawaan sistem tidak dapat dihapus.',
+      });
+      return;
+    }
+    if (target.id === currentUser?.id) {
+      setAdminActionFeedback({
+        type: 'error',
+        text: 'Anda tidak dapat menghapus akun Admin yang sedang Anda gunakan untuk login.',
+      });
+      return;
+    }
+    if (
+      confirm(
+        `Yakin ingin menghapus akun Admin tambahan "${target.name}" (@${target.username}) dari Cloud Firestore?`
+      )
+    ) {
+      deleteUser(target.id);
+      setAdminActionFeedback({
+        type: 'success',
+        text: `Akun Admin "${target.name}" (@${target.username}) berhasil dihapus.`,
+      });
+    }
+  };
 
   // Filtered users
   const filteredUsers = users.filter((u) => {
@@ -175,15 +395,26 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
 
+    const cleanUsername = formData.username.toLowerCase().replace(/\s+/g, '_');
+    if (users.some((u) => u.username.toLowerCase() === cleanUsername)) {
+      alert(`Username "@${cleanUsername}" sudah terdaftar! Gunakan username lain.`);
+      return;
+    }
+
     addUser({
       name: formData.name,
-      username: formData.username.toLowerCase().replace(/\s+/g, '_'),
+      username: cleanUsername,
       password: formData.password,
       role: formData.role,
       kelas: formData.role === 'siswa' ? formData.kelas : undefined,
-      nip: (formData.role === 'guru' || formData.role === 'kepala_madrasah') ? formData.nipNisn : undefined,
+      nip:
+        formData.role === 'guru' ||
+        formData.role === 'kepala_madrasah' ||
+        formData.role === 'admin'
+          ? formData.nipNisn || undefined
+          : undefined,
       nisn: formData.role === 'siswa' ? formData.nipNisn : undefined,
-      email: formData.email || `${formData.username}@man11jakarta.sch.id`,
+      email: formData.email || `${cleanUsername}@man11jakarta.sch.id`,
       mataPelajaran: formData.role === 'guru' ? formData.mataPelajaran : undefined,
       kelasAjar: formData.role === 'guru' ? formData.kelasAjar : undefined,
       status: 'aktif',
@@ -338,7 +569,22 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5 mt-8 pt-6 border-t border-white/10">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 mt-8 pt-6 border-t border-white/10">
+          <div
+            onClick={() => setActiveTab('admin_accounts')}
+            className="bg-white/5 hover:bg-white/10 cursor-pointer rounded-2xl p-3.5 border border-white/10 transition group"
+            title="Klik untuk kelola Multi-Admin"
+          >
+            <div className="flex items-center justify-between text-rose-300 text-xs font-semibold">
+              <div className="flex items-center gap-1.5">
+                <Shield className="w-4 h-4 text-rose-400" />
+                <span>Total Admin</span>
+              </div>
+              <span className="text-[10px] text-white/50 group-hover:text-white">Kelola →</span>
+            </div>
+            <p className="text-2xl font-black mt-1 text-white">{adminUsers.length}</p>
+          </div>
+
           <div className="bg-white/5 rounded-2xl p-3.5 border border-white/10">
             <div className="flex items-center gap-1.5 text-indigo-300 text-xs font-semibold">
               <BookOpen className="w-4 h-4" />
@@ -460,6 +706,135 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Kontrol Buka / Tutup Portal Ujian (Firestore: settings/portal) */}
+      <div
+        className={`mb-6 rounded-3xl border-2 p-5 sm:p-6 shadow-sm transition-colors ${
+          portalSettings.isOpen
+            ? 'bg-emerald-50/70 border-emerald-300'
+            : 'bg-rose-50/80 border-rose-300'
+        }`}
+      >
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
+          <div className="flex-1">
+            <div className="flex flex-wrap items-center gap-2.5 mb-2">
+              <span
+                className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black tracking-wide text-white shadow-xs ${
+                  portalSettings.isOpen ? 'bg-emerald-600' : 'bg-rose-600'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    portalSettings.isOpen ? 'bg-emerald-200 animate-pulse' : 'bg-rose-200 animate-pulse'
+                  }`}
+                />
+                {portalSettings.isOpen ? 'PORTAL DIBUKA' : 'PORTAL DITUTUP'}
+              </span>
+              <span className="text-xs font-bold text-slate-600">
+                Kontrol Akses Portal Ujian (Cloud Firestore)
+              </span>
+            </div>
+
+            <h2 className="text-base sm:text-lg font-extrabold text-slate-900">
+              {portalSettings.isOpen
+                ? 'Akses Portal Ujian & LMS Sedang Aktif'
+                : 'Akses Siswa & Guru Sedang Diblokir'}
+            </h2>
+            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+              {portalSettings.isOpen
+                ? 'Siswa, Guru, dan Admin dapat masuk ke sistem secara normal. Matikan sakelar di samping untuk menutup akses ujian sementara.'
+                : 'Siswa dan Guru akan melihat layar pengumuman penutupan penuh saat membuka aplikasi atau mencoba login. Akun Administrator tetap dapat masuk kapan saja.'}
+            </p>
+          </div>
+
+          {/* Toggle Switch Control */}
+          <div className="flex items-center gap-4 bg-white px-4 py-3 rounded-2xl border border-slate-200 shadow-2xs shrink-0">
+            <div className="text-right">
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Status Akses
+              </p>
+              <p
+                className={`text-sm font-black ${
+                  portalSettings.isOpen ? 'text-emerald-700' : 'text-rose-700'
+                }`}
+              >
+                {portalSettings.isOpen ? 'Portal Dibuka' : 'Portal Ditutup'}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={portalSettings.isOpen}
+              disabled={isSavingPortal}
+              onClick={handleTogglePortal}
+              className={`relative inline-flex h-8 w-16 shrink-0 items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 cursor-pointer disabled:opacity-60 ${
+                portalSettings.isOpen
+                  ? 'bg-emerald-600 focus:ring-emerald-500'
+                  : 'bg-rose-600 focus:ring-rose-500'
+              }`}
+              title={
+                portalSettings.isOpen
+                  ? 'Klik untuk menutup Portal Ujian'
+                  : 'Klik untuk membuka Portal Ujian'
+              }
+            >
+              <span
+                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                  portalSettings.isOpen ? 'translate-x-8' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Kolom Edit Pesan Pengumuman Penutupan Portal */}
+        <div className="mt-4 pt-4 border-t border-slate-200/80">
+          <label
+            htmlFor="portal-closed-message"
+            className="block text-xs font-extrabold text-slate-800 mb-1.5"
+          >
+            Pesan Pengumuman Penutupan Portal (Ditampilkan penuh saat Portal Ditutup)
+          </label>
+          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
+            <textarea
+              id="portal-closed-message"
+              rows={2}
+              value={portalMessageDraft}
+              onChange={(e) => setPortalMessageDraft(e.target.value)}
+              placeholder="Contoh: Portal ujian sedang ditutup sementara untuk persiapan ujian sesi berikutnya..."
+              className="flex-1 px-3.5 py-2.5 text-xs sm:text-sm bg-white border border-slate-300 rounded-xl text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+            <button
+              type="button"
+              disabled={isSavingPortal}
+              onClick={handleSavePortalMessage}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition cursor-pointer disabled:opacity-60 shrink-0"
+            >
+              <Check className="w-4 h-4 text-emerald-400" />
+              <span>{isSavingPortal ? 'Menyimpan...' : 'Simpan Pesan Pengumuman'}</span>
+            </button>
+          </div>
+
+          {portalFeedback && (
+            <div
+              className={`mt-3 px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 ${
+                portalFeedback.type === 'success'
+                  ? 'bg-emerald-100 text-emerald-900 border border-emerald-200'
+                  : 'bg-rose-100 text-rose-900 border border-rose-200'
+              }`}
+            >
+              <span>{portalFeedback.text}</span>
+              <button
+                type="button"
+                onClick={() => setPortalFeedback(null)}
+                className="text-[11px] font-bold hover:underline shrink-0"
+              >
+                Tutup
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Navigation Controls: Scrollable Vertically & Horizontally */}
       <div className="mb-6 bg-white rounded-2xl border border-slate-200 p-3 shadow-xs">
         <div className="flex items-center justify-between mb-2 px-1">
@@ -509,6 +884,18 @@ export const AdminDashboard: React.FC = () => {
           >
             <Users className="w-4 h-4" />
             <span>Guru & Siswa ({users.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('admin_accounts')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+              activeTab === 'admin_accounts'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200/80'
+            }`}
+          >
+            <Shield className="w-4 h-4 text-current" />
+            <span>Manajemen Admin ({adminUsers.length})</span>
           </button>
 
           <button
@@ -706,15 +1093,30 @@ export const AdminDashboard: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={
-                        filteredUsers.filter((u) => u.username !== 'darma313adi').length > 0 &&
+                        filteredUsers.filter(
+                          (u) =>
+                            u.username !== 'darma313adi' &&
+                            u.id !== currentUser?.id &&
+                            !(u.role === 'admin' && adminUsers.length <= 1)
+                        ).length > 0 &&
                         filteredUsers
-                          .filter((u) => u.username !== 'darma313adi')
+                          .filter(
+                            (u) =>
+                              u.username !== 'darma313adi' &&
+                              u.id !== currentUser?.id &&
+                              !(u.role === 'admin' && adminUsers.length <= 1)
+                          )
                           .every((u) => selectedUserIds.includes(u.id))
                       }
                       onChange={(e) => {
                         if (e.target.checked) {
                           const allSelectable = filteredUsers
-                            .filter((u) => u.username !== 'darma313adi')
+                            .filter(
+                              (u) =>
+                                u.username !== 'darma313adi' &&
+                                u.id !== currentUser?.id &&
+                                !(u.role === 'admin' && adminUsers.length <= 1)
+                            )
                             .map((u) => u.id);
                           setSelectedUserIds(Array.from(new Set([...selectedUserIds, ...allSelectable])));
                         } else {
@@ -738,6 +1140,10 @@ export const AdminDashboard: React.FC = () => {
               <tbody className="divide-y divide-slate-200">
                 {filteredUsers.map((u) => {
                   const isMasterAdmin = u.username === 'darma313adi';
+                  const isProtectedAdminRow =
+                    isMasterAdmin ||
+                    u.id === currentUser?.id ||
+                    (u.role === 'admin' && adminUsers.length <= 1);
                   const isSelected = selectedUserIds.includes(u.id);
 
                   return (
@@ -748,7 +1154,7 @@ export const AdminDashboard: React.FC = () => {
                       }`}
                     >
                       <td className="px-4 py-3 text-center">
-                        {!isMasterAdmin ? (
+                        {!isProtectedAdminRow ? (
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -762,7 +1168,7 @@ export const AdminDashboard: React.FC = () => {
                             className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                           />
                         ) : (
-                          <span title="Akun Super Admin Utama Terlindungi" className="inline-block">
+                          <span title="Akun Admin Terlindungi" className="inline-block">
                             <Lock className="w-3.5 h-3.5 text-slate-300 mx-auto" />
                           </span>
                         )}
@@ -804,7 +1210,7 @@ export const AdminDashboard: React.FC = () => {
                       <td className="px-4 py-3 font-mono text-slate-600">{u.nip || u.nisn || '-'}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {!isMasterAdmin && (
+                          {!isMasterAdmin && (u.role === 'siswa' || u.role === 'guru') && (
                             <button
                               type="button"
                               onClick={() => {
@@ -834,29 +1240,31 @@ export const AdminDashboard: React.FC = () => {
                           )}
                           <button
                             onClick={() => setEditingUser(u)}
-                            className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition"
+                            className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition cursor-pointer"
                             title="Edit Pengguna"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
-                          {!isMasterAdmin && (
-                            <button
-                              onClick={() => {
-                                if (
-                                  confirm(
-                                    `Yakin ingin menghapus akun ${u.role.toUpperCase()} "${u.name}" (@${u.username})? Tindakan ini tidak dapat dibatalkan.`
-                                  )
-                                ) {
-                                  deleteUser(u.id);
-                                  setSelectedUserIds((prev) => prev.filter((id) => id !== u.id));
-                                }
-                              }}
-                              className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-100 transition cursor-pointer"
-                              title="Hapus Akun Pengguna"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                          {!isMasterAdmin &&
+                            u.id !== currentUser?.id &&
+                            !(u.role === 'admin' && adminUsers.length <= 1) && (
+                              <button
+                                onClick={() => {
+                                  if (
+                                    confirm(
+                                      `Yakin ingin menghapus akun ${u.role.toUpperCase()} "${u.name}" (@${u.username})? Tindakan ini tidak dapat dibatalkan.`
+                                    )
+                                  ) {
+                                    deleteUser(u.id);
+                                    setSelectedUserIds((prev) => prev.filter((id) => id !== u.id));
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-100 transition cursor-pointer"
+                                title="Hapus Akun Pengguna"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                         </div>
                       </td>
                     </tr>
@@ -865,6 +1273,365 @@ export const AdminDashboard: React.FC = () => {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Tab: Manajemen Akun Admin (Multi-Admin) */}
+      {activeTab === 'admin_accounts' && (
+        <div className="space-y-6">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-rose-900 via-slate-900 to-indigo-950 rounded-3xl p-6 text-white shadow-md">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-500/25 text-rose-200 border border-rose-400/30 mb-2">
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>Multi-Admin & Akses Darurat Portal</span>
+                </span>
+                <h2 className="text-xl font-extrabold">Manajemen Akun Administrator</h2>
+                <p className="text-slate-300 text-xs mt-1 leading-relaxed max-w-2xl">
+                  Kelola beberapa akun Administrator (tersimpan di koleksi <strong>users</strong> Cloud Firestore dengan peran <strong>admin</strong>). Seluruh akun Admin tetap dapat masuk dan mengakses Dashboard Admin meskipun status portal sedang <strong>Ditutup</strong>.
+                </p>
+              </div>
+              <div className="bg-white/10 border border-white/15 rounded-2xl px-4 py-3 text-center shrink-0">
+                <p className="text-[11px] font-bold text-rose-200 uppercase tracking-wider">
+                  Total Akun Admin
+                </p>
+                <p className="text-2xl font-black text-white">{adminUsers.length}</p>
+              </div>
+            </div>
+          </div>
+
+          {adminActionFeedback && (
+            <div
+              className={`p-4 rounded-2xl flex items-center justify-between gap-3 text-xs sm:text-sm font-semibold border ${
+                adminActionFeedback.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                  : 'bg-rose-50 text-rose-900 border-rose-200'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                {adminActionFeedback.type === 'success' ? (
+                  <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                )}
+                <span>{adminActionFeedback.text}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdminActionFeedback(null)}
+                className="text-xs font-bold hover:underline shrink-0"
+              >
+                Tutup
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Form Tambah Admin Baru */}
+            <div className="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
+              <div className="flex items-center gap-2.5 pb-4 mb-4 border-b border-slate-100">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Tambah Akun Admin Baru</h3>
+                  <p className="text-[11px] text-slate-500">
+                    Admin baru dapat login dengan Username, NIP, atau Email.
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleCreateAdminAccount} className="space-y-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Nama Lengkap Admin *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newAdminForm.name}
+                    onChange={(e) => setNewAdminForm({ ...newAdminForm, name: e.target.value })}
+                    placeholder="Contoh: Wakil Kepala Kurikulum"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Username Login *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newAdminForm.username}
+                      onChange={(e) =>
+                        setNewAdminForm({ ...newAdminForm, username: e.target.value })
+                      }
+                      placeholder="Contoh: admin_kurikulum"
+                      className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      NIP (Opsional)
+                    </label>
+                    <input
+                      type="text"
+                      value={newAdminForm.nip}
+                      onChange={(e) => setNewAdminForm({ ...newAdminForm, nip: e.target.value })}
+                      placeholder="Contoh: 198001012005011001"
+                      className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Email Admin (Opsional)
+                  </label>
+                  <input
+                    type="email"
+                    value={newAdminForm.email}
+                    onChange={(e) => setNewAdminForm({ ...newAdminForm, email: e.target.value })}
+                    placeholder="admin.tambahan@man11jakarta.sch.id"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Password Login *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showNewAdminPassword ? 'text' : 'password'}
+                      required
+                      value={newAdminForm.password}
+                      onChange={(e) =>
+                        setNewAdminForm({ ...newAdminForm, password: e.target.value })
+                      }
+                      placeholder="Minimal 4 karakter"
+                      className="w-full px-3 py-2 pr-10 text-xs font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-rose-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewAdminPassword(!showNewAdminPassword)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showNewAdminPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tambah Akun Admin ke Firestore</span>
+                </button>
+              </form>
+            </div>
+
+            {/* Daftar Akun Admin Terdaftar */}
+            <div className="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Daftar Akun Admin ({adminUsers.length})
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Perlindungan aktif: minimal harus tersisa 1 akun Admin di dalam sistem.
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <Lock className="w-3 h-3" />
+                  Bypass Kunci Portal Aktif
+                </span>
+              </div>
+
+              <div className="divide-y divide-slate-200">
+                {adminUsers.map((adm) => {
+                  const isMaster = adm.username === 'darma313adi';
+                  const isSelf = adm.id === currentUser?.id;
+                  const isLastAdmin = adminUsers.length <= 1;
+                  const canDelete = !isMaster && !isSelf && !isLastAdmin;
+                  const isPassVisible = Boolean(showAdminPasswords[adm.id]);
+
+                  return (
+                    <div
+                      key={adm.id}
+                      className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/70 transition"
+                    >
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-extrabold text-sm text-slate-900">
+                            {adm.name}
+                          </span>
+                          {isMaster && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                              Admin Utama
+                            </span>
+                          )}
+                          {!isMaster && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                              Admin Tambahan
+                            </span>
+                          )}
+                          {isSelf && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Sedang Login
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+                          <span className="font-mono font-bold text-indigo-700">
+                            @{adm.username}
+                          </span>
+                          {adm.nip && (
+                            <span className="font-mono text-slate-500">NIP: {adm.nip}</span>
+                          )}
+                          {adm.email && <span className="text-slate-500">{adm.email}</span>}
+                        </div>
+
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500 pt-0.5">
+                          <span>Password:</span>
+                          <code className="px-2 py-0.5 rounded bg-slate-100 font-mono text-slate-800">
+                            {isPassVisible ? adm.password : '••••••••'}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowAdminPasswords((prev) => ({
+                                ...prev,
+                                [adm.id]: !isPassVisible,
+                              }))
+                            }
+                            className="text-indigo-600 hover:underline font-semibold cursor-pointer"
+                          >
+                            {isPassVisible ? 'Sembunyikan' : 'Lihat'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPasswordEditTarget(adm);
+                            setNewAdminPasswordInput('');
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition cursor-pointer"
+                        >
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>Ubah Password</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setEditingUser(adm)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={!canDelete}
+                          onClick={() => handleDeleteAdminAccount(adm)}
+                          className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                            canDelete
+                              ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer'
+                              : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                          }`}
+                          title={
+                            isLastAdmin
+                              ? 'Minimal harus tersisa 1 akun Admin'
+                              : isMaster
+                              ? 'Akun Admin utama terlindungi'
+                              : isSelf
+                              ? 'Tidak dapat menghapus akun yang sedang login'
+                              : 'Hapus akun Admin tambahan'
+                          }
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Hapus</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Modal Ubah Password Akun Admin */}
+          {passwordEditTarget && (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+                <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Ubah Password Admin</h3>
+                    <p className="text-[11px] text-slate-500">
+                      {passwordEditTarget.name} (@{passwordEditTarget.username})
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasswordEditTarget(null);
+                      setNewAdminPasswordInput('');
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <form onSubmit={handleSaveAdminPasswordChange} className="p-5 space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Password Baru *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      minLength={4}
+                      value={newAdminPasswordInput}
+                      onChange={(e) => setNewAdminPasswordInput(e.target.value)}
+                      placeholder="Masukkan password baru (min. 4 karakter)"
+                      className="w-full px-3.5 py-2.5 text-xs font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPasswordEditTarget(null);
+                        setNewAdminPasswordInput('');
+                      }}
+                      className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs cursor-pointer"
+                    >
+                      Simpan Password Baru
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1689,7 +2456,9 @@ export const AdminDashboard: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  {formData.role === 'kepala_madrasah'
+                  {formData.role === 'admin'
+                    ? 'NIP Administrator (Opsional)'
+                    : formData.role === 'kepala_madrasah'
                     ? 'NIP Kepala Madrasah *'
                     : formData.role === 'guru'
                     ? 'NIP Guru *'
@@ -1701,7 +2470,9 @@ export const AdminDashboard: React.FC = () => {
                   value={formData.nipNisn}
                   onChange={(e) => setFormData({ ...formData, nipNisn: e.target.value })}
                   placeholder={
-                    formData.role === 'kepala_madrasah'
+                    formData.role === 'admin'
+                      ? 'Opsional: NIP untuk login via NIP'
+                      : formData.role === 'kepala_madrasah'
                       ? 'Contoh: 196807121995031002'
                       : formData.role === 'guru'
                       ? 'Nomor Induk Pegawai Guru'
@@ -1813,74 +2584,96 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               {/* Role Switcher */}
-              {editingUser.username !== 'darma313adi' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Peran Akun (Role)
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditingUser({
-                          ...editingUser,
-                          role: 'kepala_madrasah',
-                          kelas: undefined,
-                          mataPelajaran: undefined,
-                        })
-                      }
-                      className={`py-2 px-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1 transition cursor-pointer ${
-                        editingUser.role === 'kepala_madrasah'
-                          ? 'bg-purple-50 border-purple-500 text-purple-700 ring-2 ring-purple-500/20'
-                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <Award className="w-3.5 h-3.5" />
-                      <span>Kamad</span>
-                    </button>
+              {editingUser.username !== 'darma313adi' &&
+                editingUser.id !== currentUser?.id &&
+                !(editingUser.role === 'admin' && adminUsers.length <= 1) && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Peran Akun (Role)
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingUser({
+                            ...editingUser,
+                            role: 'admin',
+                            kelas: undefined,
+                            mataPelajaran: undefined,
+                          })
+                        }
+                        className={`py-2 px-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1 transition cursor-pointer ${
+                          editingUser.role === 'admin'
+                            ? 'bg-rose-50 border-rose-500 text-rose-700 ring-2 ring-rose-500/20'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Shield className="w-3.5 h-3.5" />
+                        <span>Admin</span>
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditingUser({
-                          ...editingUser,
-                          role: 'guru',
-                          kelas: undefined,
-                          mataPelajaran: editingUser.mataPelajaran || 'Biologi',
-                        })
-                      }
-                      className={`py-2 px-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1 transition cursor-pointer ${
-                        editingUser.role === 'guru'
-                          ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500/20'
-                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <BookOpen className="w-3.5 h-3.5" />
-                      <span>Guru</span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingUser({
+                            ...editingUser,
+                            role: 'kepala_madrasah',
+                            kelas: undefined,
+                            mataPelajaran: undefined,
+                          })
+                        }
+                        className={`py-2 px-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1 transition cursor-pointer ${
+                          editingUser.role === 'kepala_madrasah'
+                            ? 'bg-purple-50 border-purple-500 text-purple-700 ring-2 ring-purple-500/20'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Award className="w-3.5 h-3.5" />
+                        <span>Kamad</span>
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditingUser({
-                          ...editingUser,
-                          role: 'siswa',
-                          mataPelajaran: undefined,
-                          kelas: editingUser.kelas || 'XII 3',
-                        })
-                      }
-                      className={`py-2 px-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1 transition cursor-pointer ${
-                        editingUser.role === 'siswa'
-                          ? 'bg-emerald-50 border-emerald-500 text-emerald-700 ring-2 ring-emerald-500/20'
-                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <GraduationCap className="w-3.5 h-3.5" />
-                      <span>Siswa</span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingUser({
+                            ...editingUser,
+                            role: 'guru',
+                            kelas: undefined,
+                            mataPelajaran: editingUser.mataPelajaran || 'Biologi',
+                          })
+                        }
+                        className={`py-2 px-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1 transition cursor-pointer ${
+                          editingUser.role === 'guru'
+                            ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500/20'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>Guru</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingUser({
+                            ...editingUser,
+                            role: 'siswa',
+                            mataPelajaran: undefined,
+                            kelas: editingUser.kelas || 'XII 3',
+                          })
+                        }
+                        className={`py-2 px-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1 transition cursor-pointer ${
+                          editingUser.role === 'siswa'
+                            ? 'bg-emerald-50 border-emerald-500 text-emerald-700 ring-2 ring-emerald-500/20'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <GraduationCap className="w-3.5 h-3.5" />
+                        <span>Siswa</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {editingUser.role === 'guru' && (
                 <div className="space-y-3">

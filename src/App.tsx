@@ -6,9 +6,41 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { GuruDashboard } from './components/guru/GuruDashboard';
 import { SiswaDashboard } from './components/siswa/SiswaDashboard';
 import { ExamPlayer } from './components/exam/ExamPlayer';
+import { PortalClosedScreen } from './components/common/PortalClosedScreen';
 
 const MainLayout: React.FC = () => {
-  const { currentUser, activeExam, activeSubmission } = useLMS();
+  const {
+    currentUser,
+    activeExam,
+    activeSubmission,
+    portalSettings,
+    isPortalChecking,
+    refreshPortalSettings,
+    logout,
+  } = useLMS();
+
+  // Wait briefly on first boot for single getDoc check when a non-admin cached session exists
+  if (isPortalChecking && currentUser && currentUser.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white">
+        <div className="w-10 h-10 border-4 border-indigo-400 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-sm font-bold text-indigo-100">Memeriksa status akses portal...</p>
+      </div>
+    );
+  }
+
+  // Block Siswa, Guru, and other non-admin users when portal is closed (Admin always bypassed)
+  if (!portalSettings.isOpen && currentUser && currentUser.role !== 'admin') {
+    return (
+      <PortalClosedScreen
+        message={portalSettings.closedMessage}
+        onRefresh={() => refreshPortalSettings(false)}
+        isChecking={isPortalChecking}
+        currentUser={currentUser}
+        onLogout={logout}
+      />
+    );
+  }
 
   // If student is currently taking an exam, show the dedicated Fullscreen ExamPlayer
   if (activeExam && activeSubmission) {

@@ -11,6 +11,7 @@ import {
   MataPelajaran,
   KelasMapelPengampu,
   AttendanceRecord,
+  PortalSettings,
 } from '../types';
 import {
   INITIAL_USERS,
@@ -26,6 +27,7 @@ import { validatePasswordChange } from '../utils/authUtils';
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   deleteDoc,
@@ -58,7 +60,16 @@ interface LMSContextType {
   activeExam: Exam | null;
   activeSubmission: ExamSubmission | null;
   isCloudSynced: boolean;
-  login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
+  portalSettings: PortalSettings;
+  isPortalChecking: boolean;
+  refreshPortalSettings: (silent?: boolean) => Promise<PortalSettings>;
+  updatePortalSettings: (
+    updates: Partial<PortalSettings>
+  ) => Promise<{ success: boolean; error?: string }>;
+  login: (
+    username: string,
+    password: string
+  ) => Promise<{ success: boolean; message?: string; blockedByPortal?: boolean }>;
   logout: () => void;
   switchUser: (user: User) => void;
   addUser: (user: Omit<User, 'id' | 'createdAt'>) => void;
@@ -113,6 +124,12 @@ interface LMSContextType {
 }
 
 const LMSContext = createContext<LMSContextType | undefined>(undefined);
+
+export const DEFAULT_PORTAL_SETTINGS: PortalSettings = {
+  isOpen: true,
+  closedMessage:
+    'Portal Ujian & Pembelajaran MAN 11 Jakarta sedang ditutup sementara oleh Administrator. Silakan tunggu informasi lebih lanjut untuk jadwal pembukaan portal kembali.',
+};
 
 const STORAGE_KEY_CURRENT_USER = 'educbt_current_user_v1';
 const STORAGE_KEY_USERS = 'educbt_users_v1';
@@ -475,6 +492,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [activeExam, setActiveExam] = useState<Exam | null>(null);
   const [activeSubmission, setActiveSubmission] = useState<ExamSubmission | null>(null);
   const [isCloudSynced, setIsCloudSynced] = useState<boolean>(false);
+  const [portalSettings, setPortalSettings] = useState<PortalSettings>(DEFAULT_PORTAL_SETTINGS);
+  const [isPortalChecking, setIsPortalChecking] = useState<boolean>(true);
   const isInitialSeedDone = useRef<boolean>(false);
 
   // Sync state to localStorage as fast client-cache
@@ -518,6 +537,69 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [currentUser]);
 
+  const refreshPortalSettings = async (silent = false): Promise<PortalSettings> => {
+    if (!silent) setIsPortalChecking(true);
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'portal'));
+      if (snap.exists()) {
+        const data = snap.data() as Partial<PortalSettings>;
+        const next: PortalSettings = {
+          isOpen: data.isOpen !== undefined ? Boolean(data.isOpen) : true,
+          closedMessage:
+            typeof data.closedMessage === 'string' && data.closedMessage.trim()
+              ? data.closedMessage
+              : DEFAULT_PORTAL_SETTINGS.closedMessage,
+          updatedAt: data.updatedAt,
+          updatedBy: data.updatedBy,
+        };
+        setPortalSettings(next);
+        return next;
+      }
+      setPortalSettings(DEFAULT_PORTAL_SETTINGS);
+      return DEFAULT_PORTAL_SETTINGS;
+    } catch (err) {
+      console.warn('Gagal membaca settings/portal dari Firestore:', err);
+      return portalSettings;
+    } finally {
+      if (!silent) setIsPortalChecking(false);
+    }
+  };
+
+  const updatePortalSettings = async (
+    updates: Partial<PortalSettings>
+  ): Promise<{ success: boolean; error?: string }> => {
+    const next: PortalSettings = {
+      ...portalSettings,
+      ...updates,
+      closedMessage:
+        updates.closedMessage !== undefined
+          ? updates.closedMessage
+          : portalSettings.closedMessage,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUserRef.current?.name || 'Administrator',
+    };
+    setPortalSettings(next);
+    try {
+      await setDoc(doc(db, 'settings', 'portal'), cleanForFirestore(next), { merge: true });
+      return { success: true };
+    } catch (err: any) {
+      console.error('Gagal menyimpan settings/portal ke Firestore:', err);
+      return {
+        success: false,
+        error: err?.message || 'Gagal menyimpan pengaturan portal ke Firestore.',
+      };
+    }
+  };
+
+  // --- Single getDoc Read for Portal Access Settings on App Boot ---
+  useEffect(() => {
+    if (!db) {
+      setIsPortalChecking(false);
+      return;
+    }
+    refreshPortalSettings();
+  }, []);
+
   // --- Real-time Cloud Firestore Listeners & Cloud Sync ---
   useEffect(() => {
     if (!db) return;
@@ -548,6 +630,11 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         INITIAL_SUBMISSIONS.forEach((s) =>
           ops.push({ col: 'submissions', id: s.id, data: cleanForFirestore(s) })
         );
+        ops.push({
+          col: 'settings',
+          id: 'portal',
+          data: cleanForFirestore(DEFAULT_PORTAL_SETTINGS),
+        });
 
         for (let i = 0; i < ops.length; i += 450) {
           const batch = writeBatch(db);
@@ -838,7 +925,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const login = async (
     username: string,
     password: string
-  ): Promise<{ success: boolean; message?: string }> => {
+  ): Promise<{ success: boolean; message?: string; blockedByPortal?: boolean }> => {
     const trimmedUser = username.trim().toLowerCase();
     const cleanUserDigits = trimmedUser.replace(/\D/g, '');
     const trimmedPass = password.trim();
@@ -900,6 +987,17 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (foundUser.status === 'nonaktif') {
         return { success: false, message: 'Akun Anda dinonaktifkan oleh administrator.' };
       }
+
+      // Single getDoc read to verify portal status before allowing non-admin login
+      const latestPortal = await refreshPortalSettings(true);
+      if (!latestPortal.isOpen && foundUser.role !== 'admin') {
+        return {
+          success: false,
+          blockedByPortal: true,
+          message: latestPortal.closedMessage || DEFAULT_PORTAL_SETTINGS.closedMessage,
+        };
+      }
+
       setCurrentUser(foundUser);
       try {
         localStorage.setItem(STORAGE_KEY_CURRENT_USER, JSON.stringify(foundUser));
@@ -949,7 +1047,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const deleteUser = (userId: string) => {
     const target = users.find((u) => u.id === userId);
-    if (target?.username === 'darma313adi') return;
+    if (!target || target.username === 'darma313adi') return;
+    if (target.id === currentUser?.id) return;
+    if (target.role === 'admin') {
+      const totalAdmins = users.filter((u) => u.role === 'admin').length;
+      if (totalAdmins <= 1) return;
+    }
 
     setUsers((prev) => prev.filter((u) => u.id !== userId));
     deleteDoc(doc(db, 'users', userId)).catch((err) =>
@@ -981,10 +1084,16 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const deleteUsers = (userIds: string[]) => {
-    const validIds = userIds.filter((id) => {
+    let validIds = userIds.filter((id) => {
       const u = users.find((user) => user.id === id);
-      return u?.username !== 'darma313adi';
+      return u && u.username !== 'darma313adi' && u.id !== currentUser?.id;
     });
+    const allAdmins = users.filter((u) => u.role === 'admin');
+    const remainingAdmins = allAdmins.filter((a) => !validIds.includes(a.id));
+    if (remainingAdmins.length === 0 && allAdmins.length > 0) {
+      const keepAdminId = allAdmins[0].id;
+      validIds = validIds.filter((id) => id !== keepAdminId);
+    }
     if (validIds.length === 0) return;
 
     setUsers((prev) => prev.filter((u) => !validIds.includes(u.id)));
@@ -1016,7 +1125,11 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const toggleUserStatus = (userId: string) => {
     const target = users.find((u) => u.id === userId);
-    if (!target || target.username === 'darma313adi') return;
+    if (!target || target.username === 'darma313adi' || target.id === currentUser?.id) return;
+    if (target.role === 'admin' && target.status === 'aktif') {
+      const activeAdmins = users.filter((u) => u.role === 'admin' && u.status === 'aktif');
+      if (activeAdmins.length <= 1) return;
+    }
     const nextStatus: 'aktif' | 'nonaktif' = target.status === 'aktif' ? 'nonaktif' : 'aktif';
     const updated = { ...target, status: nextStatus };
     setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
@@ -1884,6 +1997,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       INITIAL_SUBMISSIONS.forEach((s) =>
         seedOps.push({ col: 'submissions', id: s.id, data: cleanForFirestore(s) })
       );
+      seedOps.push({
+        col: 'settings',
+        id: 'portal',
+        data: cleanForFirestore(DEFAULT_PORTAL_SETTINGS),
+      });
+      setPortalSettings(DEFAULT_PORTAL_SETTINGS);
       for (let i = 0; i < seedOps.length; i += 450) {
         const batch = writeBatch(db);
         seedOps.slice(i, i + 450).forEach((op) => {
@@ -1911,6 +2030,10 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         activeExam,
         activeSubmission,
         isCloudSynced,
+        portalSettings,
+        isPortalChecking,
+        refreshPortalSettings,
+        updatePortalSettings,
         login,
         logout,
         switchUser,

@@ -26,6 +26,9 @@ service cloud.firestore {
     match /absensi/{absensiId} {
       allow read, write: if true;
     }
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
     match /{document=**} {
       allow read, write: if false;
     }

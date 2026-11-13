@@ -217,3 +217,11 @@ export interface AttendanceRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface PortalSettings {
+  isOpen: boolean;
+  closedMessage: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+

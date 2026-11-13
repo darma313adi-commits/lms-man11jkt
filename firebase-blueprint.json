@@ -143,6 +143,18 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "tanggal", "kelasNama", "guruId"]
+    },
+    "PortalSettings": {
+      "title": "PortalSettings",
+      "description": "Global exam portal open/close toggle and closure message",
+      "type": "object",
+      "properties": {
+        "isOpen": { "type": "boolean" },
+        "closedMessage": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["isOpen", "closedMessage"]
     }
   },
   "firestore": {
@@ -177,6 +189,10 @@
     "/absensi/{absensiId}": {
       "schema": { "$ref": "#/entities/AttendanceRecord" },
       "description": "Teacher attendance records for classes taught"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/PortalSettings" },
+      "description": "Application portal access settings (e.g. settings/portal)"
     }
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLMS } from '../context/LMSContext';
 import { APP_LOGO_URL } from '../constants/assets';
 import {
@@ -25,9 +25,17 @@ import {
   buildLoginUrl,
   isDevEnvironment,
 } from '../utils/urlHelper';
+import { PortalClosedScreen } from './common/PortalClosedScreen';
 
 export const LoginView: React.FC = () => {
-  const { login, users, isCloudSynced } = useLMS();
+  const {
+    login,
+    users,
+    isCloudSynced,
+    portalSettings,
+    isPortalChecking,
+    refreshPortalSettings,
+  } = useLMS();
 
   // Role can be determined by ?role= query parameter or auto exam logout
   const [activePortal, setActivePortal] = useState<'admin' | 'guru' | 'siswa' | 'kepala_madrasah' | 'select'>(() => {
@@ -53,12 +61,16 @@ export const LoginView: React.FC = () => {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [showHelpGuide, setShowHelpGuide] = useState(false);
   const [showQuickAccounts, setShowQuickAccounts] = useState(false);
+  const [allowAdminOverride, setAllowAdminOverride] = useState(false);
+  const hasInitializedUrlRef = useRef(false);
 
-  // Initialize form fields when portal changes
+  // Initialize form fields once from URL query params without overwriting user typing on snapshot updates
   useEffect(() => {
+    if (hasInitializedUrlRef.current) return;
+    hasInitializedUrlRef.current = true;
+
     const params = new URLSearchParams(window.location.search);
     const roleParam = params.get('role')?.toLowerCase();
-    const userParam = params.get('user') || params.get('username') || params.get('nip') || params.get('nisn');
 
     if (roleParam === 'guru') {
       setActivePortal('guru');
@@ -76,22 +88,6 @@ export const LoginView: React.FC = () => {
       setActivePortal('kepala_madrasah');
       setUsername('');
       setPassword('');
-    }
-
-    if (userParam) {
-      const trimmedTarget = userParam.trim().toLowerCase();
-      const matched = users.find(
-        (u) =>
-          u.username.toLowerCase() === trimmedTarget ||
-          u.email?.toLowerCase() === trimmedTarget ||
-          u.nip?.toLowerCase() === trimmedTarget ||
-          u.nisn?.toLowerCase() === trimmedTarget
-      );
-      if (matched) {
-        setActivePortal(matched.role);
-        setUsername(matched.username);
-        setPassword(matched.password);
-      }
     }
 
     // Check if redirected due to automatic exam logout (time expired or 3x violation)
@@ -113,6 +109,27 @@ export const LoginView: React.FC = () => {
         }
       }
     } catch {}
+  }, []);
+
+  // Optional auto-fill when ?user= query parameter matches loaded users
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const userParam = params.get('user') || params.get('username') || params.get('nip') || params.get('nisn');
+    if (userParam && users.length > 0) {
+      const trimmedTarget = userParam.trim().toLowerCase();
+      const matched = users.find(
+        (u) =>
+          u.username.toLowerCase() === trimmedTarget ||
+          u.email?.toLowerCase() === trimmedTarget ||
+          u.nip?.toLowerCase() === trimmedTarget ||
+          u.nisn?.toLowerCase() === trimmedTarget
+      );
+      if (matched) {
+        setActivePortal(matched.role);
+        setUsername(matched.username);
+        setPassword(matched.password);
+      }
+    }
   }, [users]);
 
   const selectPortal = (role: 'admin' | 'guru' | 'siswa' | 'kepala_madrasah') => {
@@ -137,6 +154,7 @@ export const LoginView: React.FC = () => {
 
   const backToPortalSelect = () => {
     setActivePortal('select');
+    setAllowAdminOverride(false);
     setErrorMsg('');
     const newUrl = window.location.pathname;
     window.history.pushState({ path: newUrl }, '', newUrl);
@@ -150,6 +168,9 @@ export const LoginView: React.FC = () => {
     try {
       const result = await login(username, password);
       if (!result.success) {
+        if (result.blockedByPortal) {
+          setAllowAdminOverride(false);
+        }
         setErrorMsg(result.message || 'Gagal masuk. Periksa kembali username dan password.');
       }
     } catch {
@@ -171,6 +192,29 @@ export const LoginView: React.FC = () => {
 
   // Role filtered users for quick helper
   const roleUsers = users.filter((u) => u.role === activePortal);
+
+  if (isPortalChecking && activePortal !== 'admin') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col items-center justify-center p-6 text-white">
+        <div className="w-10 h-10 border-4 border-indigo-400 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-sm font-bold text-indigo-100">Memeriksa status akses portal...</p>
+      </div>
+    );
+  }
+
+  if (!portalSettings.isOpen && activePortal !== 'admin' && !allowAdminOverride) {
+    return (
+      <PortalClosedScreen
+        message={portalSettings.closedMessage}
+        onRefresh={() => refreshPortalSettings(false)}
+        isChecking={isPortalChecking}
+        onAdminLoginClick={() => {
+          setAllowAdminOverride(true);
+          selectPortal('admin');
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col justify-center py-10 sm:px-6 lg:px-8 relative overflow-hidden">
@@ -344,6 +388,19 @@ export const LoginView: React.FC = () => {
               )}
             </div>
 
+            {/* Admin Notice when Portal is Currently Closed */}
+            {!portalSettings.isOpen && activePortal === 'admin' && (
+              <div className="mb-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-start gap-2.5">
+                <Lock className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Portal Ujian Sedang Ditutup</p>
+                  <p className="text-rose-700 mt-0.5">
+                    Akses Siswa & Guru saat ini diblokir. Anda tetap dapat masuk sebagai Administrator untuk memantau data dan membuka kembali portal.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Error Banner */}
             {errorMsg && (
               <div
@@ -368,7 +425,7 @@ export const LoginView: React.FC = () => {
                     ? 'Username / NIP Guru'
                     : activePortal === 'kepala_madrasah'
                     ? 'Username / NIP Kepala Madrasah'
-                    : 'Username Administrator'}
+                    : 'Username / NIP / Email Administrator'}
                 </label>
                 <div className="mt-1 relative rounded-lg shadow-2xs">
                   <input
@@ -385,7 +442,7 @@ export const LoginView: React.FC = () => {
                         ? 'Contoh: guru_fauzan atau NIP'
                         : activePortal === 'kepala_madrasah'
                         ? 'Contoh: kamad_ahmad atau NIP'
-                        : 'Contoh: darma313adi'
+                        : 'Contoh: darma313adi, NIP, atau email admin'
                     }
                     className="block w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                   />
