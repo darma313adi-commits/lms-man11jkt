@@ -121,6 +121,7 @@ export const AdminDashboard: React.FC = () => {
     password: '',
     role: 'siswa' as UserRole,
     kelas: 'XII 3',
+    kelasAjar: ['X 3', 'XI 3', 'XII 3', 'XII 4'] as string[],
     nipNisn: '',
     email: '',
     mataPelajaran: '',
@@ -135,13 +136,19 @@ export const AdminDashboard: React.FC = () => {
   const [pastedPdfText, setPastedPdfText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Derived unique classes from rombelList and users
+  // Derived unique classes from rombelList and users, sorted X -> XI -> XII
   const classesList = Array.from(
     new Set([
       ...rombelList.map((r) => r.nama),
       ...users.filter((u) => u.role === 'siswa' && u.kelas).map((u) => u.kelas as string),
     ])
-  ).sort();
+  ).sort((a, b) => {
+    const rank = (c: string) =>
+      c.startsWith('XII') ? 3 : c.startsWith('XI') ? 2 : c.startsWith('X') ? 1 : 4;
+    const ra = rank(a);
+    const rb = rank(b);
+    return ra !== rb ? ra - rb : a.localeCompare(b, 'id-ID', { numeric: true });
+  });
 
   const teachersCount = users.filter((u) => u.role === 'guru').length;
   const studentsCount = users.filter((u) => u.role === 'siswa').length;
@@ -178,7 +185,7 @@ export const AdminDashboard: React.FC = () => {
       nisn: formData.role === 'siswa' ? formData.nipNisn : undefined,
       email: formData.email || `${formData.username}@man11jakarta.sch.id`,
       mataPelajaran: formData.role === 'guru' ? formData.mataPelajaran : undefined,
-      kelasAjar: formData.role === 'guru' ? ['XII 3', 'XII 4'] : undefined,
+      kelasAjar: formData.role === 'guru' ? formData.kelasAjar : undefined,
       status: 'aktif',
     });
 
@@ -188,6 +195,7 @@ export const AdminDashboard: React.FC = () => {
       password: '',
       role: 'siswa',
       kelas: 'XII 3',
+      kelasAjar: ['X 3', 'XI 3', 'XII 3', 'XII 4'],
       nipNisn: '',
       email: '',
       mataPelajaran: '',
@@ -1605,6 +1613,41 @@ export const AdminDashboard: React.FC = () => {
               )}
             </div>
 
+            {formData.role === 'guru' && (
+              <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2">
+                <label className="block text-xs font-bold text-indigo-950">
+                  Kelas yang Diajar Guru Ini (X, XI, XII)
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {classesList.map((kls) => {
+                    const checked = formData.kelasAjar.includes(kls);
+                    return (
+                      <button
+                        key={kls}
+                        type="button"
+                        onClick={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            kelasAjar: checked
+                              ? prev.kelasAjar.filter((c) => c !== kls)
+                              : [...prev.kelasAjar, kls],
+                          }))
+                        }
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          checked
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        {checked ? '✓ ' : ''}
+                        {kls}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Nama Lengkap *</label>
               <input
@@ -1840,20 +1883,56 @@ export const AdminDashboard: React.FC = () => {
               )}
 
               {editingUser.role === 'guru' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Mata Pelajaran Diampu</label>
-                  <select
-                    value={editingUser.mataPelajaran || ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, mataPelajaran: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white font-medium"
-                  >
-                    <option value="">-- Pilih Mata Pelajaran --</option>
-                    {mataPelajaranList.map((m) => (
-                      <option key={m.id} value={m.nama}>
-                        {m.nama} ({m.kode})
-                      </option>
-                    ))}
-                  </select>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Mata Pelajaran Diampu</label>
+                    <select
+                      value={editingUser.mataPelajaran || ''}
+                      onChange={(e) => setEditingUser({ ...editingUser, mataPelajaran: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white font-medium"
+                    >
+                      <option value="">-- Pilih Mata Pelajaran --</option>
+                      {mataPelajaranList.map((m) => (
+                        <option key={m.id} value={m.nama}>
+                          {m.nama} ({m.kode})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2">
+                    <label className="block text-xs font-bold text-indigo-950">
+                      Kelas yang Diajar (X, XI, XII)
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {classesList.map((kls) => {
+                        const currentKA = editingUser.kelasAjar || [];
+                        const checked = currentKA.includes(kls);
+                        return (
+                          <button
+                            key={kls}
+                            type="button"
+                            onClick={() =>
+                              setEditingUser({
+                                ...editingUser,
+                                kelasAjar: checked
+                                  ? currentKA.filter((c) => c !== kls)
+                                  : [...currentKA, kls],
+                              })
+                            }
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                              checked
+                                ? 'bg-indigo-600 text-white border-indigo-600'
+                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                            }`}
+                          >
+                            {checked ? '✓ ' : ''}
+                            {kls}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -2193,7 +2272,7 @@ export const AdminDashboard: React.FC = () => {
 
                               if (
                                 confirm(
-                                  `PERINGATAN RESET KELAS!\n\nApakah Anda yakin ingin mereset ujian seluruh siswa di kelas "${adminParticipantClassFilter}" (${countInClass} siswa)?\n\nSemua lembar jawaban dan skor siswa kelas ${adminParticipantClassFilter} pada ujian "${selectedExamForParticipants.judul}" akan dihapus dari server Realtime Database. Siswa dapat login kembali dan mengulang ujian.`
+                                  `PERINGATAN RESET KELAS!\n\nApakah Anda yakin ingin mereset ujian seluruh siswa di kelas "${adminParticipantClassFilter}" (${countInClass} siswa)?\n\nSemua lembar jawaban dan skor siswa kelas ${adminParticipantClassFilter} pada ujian "${selectedExamForParticipants.judul}" akan dihapus dari server Cloud Firestore. Siswa dapat login kembali dan mengulang ujian.`
                                 )
                               ) {
                                 resetExamParticipantsByClass(
@@ -2317,7 +2396,7 @@ export const AdminDashboard: React.FC = () => {
                                 onClick={() => {
                                   if (
                                     confirm(
-                                      `Yakin ingin mereset ujian siswa "${sub.siswaNama}" (${sub.siswaKelas})?\n\nLembar jawaban dan skor siswa ini akan dihapus dari Realtime Database. Siswa dapat login kembali dan mengulang ujian ini dari awal.`
+                                      `Yakin ingin mereset ujian siswa "${sub.siswaNama}" (${sub.siswaKelas})?\n\nLembar jawaban dan skor siswa ini akan dihapus dari Cloud Firestore. Siswa dapat login kembali dan mengulang ujian ini dari awal.`
                                     )
                                   ) {
                                     resetExamSubmission(sub.id);

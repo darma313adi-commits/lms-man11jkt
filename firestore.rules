@@ -23,6 +23,9 @@ service cloud.firestore {
     match /submissions/{submissionId} {
       allow read, write: if true;
     }
+    match /absensi/{absensiId} {
+      allow read, write: if true;
+    }
     match /{document=**} {
       allow read, write: if false;
     }

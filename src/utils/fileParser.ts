@@ -110,11 +110,8 @@ export async function parseExcelUsers(file: File): Promise<Partial<User>[]> {
       const rawCleaned = rawKelas ? rawKelas.trim().replace(/\s+/g, ' ') : undefined;
       const cleanKelas = rawCleaned
         ? rawCleaned
-            .replace(/XI\s+IPS\s+1/gi, 'XII 3')
-            .replace(/XI\s+IPS\s+2/gi, 'XII 3')
-            .replace(/XII\s+IPS\s+1/gi, 'XII 4')
-            .replace(/XII\s+IPS\s+2/gi, 'XII 4')
             .replace(/\b(MIPA|MIA|IPA|IPS)\s*/gi, '')
+            .replace(/\s+/g, ' ')
             .trim()
         : undefined;
       const finalKelas = role === 'siswa' && cleanKelas ? cleanKelas : undefined;
@@ -128,11 +125,8 @@ export async function parseExcelUsers(file: File): Promise<Partial<User>[]> {
               .map((k) =>
                 k
                   .trim()
-                  .replace(/XI\s+IPS\s+1/gi, 'XII 3')
-                  .replace(/XI\s+IPS\s+2/gi, 'XII 3')
-                  .replace(/XII\s+IPS\s+1/gi, 'XII 4')
-                  .replace(/XII\s+IPS\s+2/gi, 'XII 4')
                   .replace(/\b(MIPA|MIA|IPA|IPS)\s*/gi, '')
+                  .replace(/\s+/g, ' ')
                   .trim()
               )
               .filter(Boolean)

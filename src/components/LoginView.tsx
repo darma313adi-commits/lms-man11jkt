@@ -199,7 +199,7 @@ export const LoginView: React.FC = () => {
         {/* Cloud Sync Status Indicator */}
         <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-white/10 backdrop-blur-md border border-white/15 text-indigo-100">
           <span className={`w-2 h-2 rounded-full ${isCloudSynced ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-          <span>{isCloudSynced ? 'Firebase Realtime Database Aktif • Sinkron Real-time Antar Perangkat' : 'Menghubungkan ke Realtime Database...'}</span>
+          <span>{isCloudSynced ? 'Cloud Firestore Aktif • Sinkron Real-time Antar Perangkat' : 'Menghubungkan ke Cloud Firestore...'}</span>
         </div>
       </div>
 

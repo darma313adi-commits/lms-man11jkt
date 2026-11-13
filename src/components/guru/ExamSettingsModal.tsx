@@ -28,10 +28,31 @@ interface ExamSettingsModalProps {
 export const ALL_CLASSES_LIST = [
   'X 3',
   'X 4',
+  'XI 1',
+  'XI 2',
+  'XI 3',
+  'XI 4',
   'XII 3',
   'XII 4',
   'Semua Kelas',
 ];
+
+function sortClassesNatural(classes: string[]): string[] {
+  const rank = (c: string) => {
+    const upper = c.trim().toUpperCase();
+    if (upper === 'SEMUA KELAS') return 999;
+    if (upper.startsWith('XII')) return 3;
+    if (upper.startsWith('XI')) return 2;
+    if (upper.startsWith('X')) return 1;
+    return 4;
+  };
+  return [...classes].sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    return a.localeCompare(b, 'id-ID', { numeric: true });
+  });
+}
 
 function generateRandomTokenCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -51,27 +72,46 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
   const { rombelList, currentUser, users, kelasMapelPengampuList } = useLMS();
   const isTeacher = currentUser?.role === 'guru';
 
+  const taughtClasses = useMemo(() => {
+    if (!isTeacher || !currentUser) return [];
+    const fromProfile = currentUser.kelasAjar || [];
+    const fromPlotting = kelasMapelPengampuList
+      .filter(
+        (k) =>
+          k.guruId === currentUser.id ||
+          (k.guruNama &&
+            currentUser.name &&
+            k.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+      )
+      .map((k) => k.kelasNama);
+    const fromWali = rombelList
+      .filter((r) => r.waliKelasId === currentUser.id)
+      .map((r) => r.nama);
+    return sortClassesNatural(
+      Array.from(
+        new Set([...fromProfile, ...fromPlotting, ...fromWali].map((k) => k.trim()).filter(Boolean))
+      )
+    );
+  }, [isTeacher, currentUser, kelasMapelPengampuList, rombelList]);
+
+  const allSchoolClasses = useMemo(() => {
+    const fromRombels = rombelList.map((r) => r.nama.trim()).filter(Boolean);
+    const fallback = ALL_CLASSES_LIST.filter((c) => c !== 'Semua Kelas');
+    const merged = Array.from(new Set(fromRombels.length > 0 ? fromRombels : fallback));
+    return sortClassesNatural(merged);
+  }, [rombelList]);
+
+  const [showAllRombels, setShowAllRombels] = useState<boolean>(false);
+
   const classChoices = useMemo(() => {
     if (isTeacher && currentUser) {
-      const fromProfile = currentUser.kelasAjar || [];
-      const fromPlotting = kelasMapelPengampuList
-        .filter(
-          (k) =>
-            k.guruId === currentUser.id ||
-            (k.guruNama &&
-              currentUser.name &&
-              k.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
-        )
-        .map((k) => k.kelasNama);
-      const taught = Array.from(
-        new Set([...fromProfile, ...fromPlotting].map((k) => k.trim()).filter(Boolean))
-      ).sort();
-      return taught;
+      if (showAllRombels || taughtClasses.length === 0) {
+        return sortClassesNatural(Array.from(new Set([...taughtClasses, ...allSchoolClasses])));
+      }
+      return taughtClasses;
     }
-    return rombelList && rombelList.length > 0
-      ? [...rombelList.map((r) => r.nama), 'Semua Kelas']
-      : ALL_CLASSES_LIST;
-  }, [isTeacher, currentUser, kelasMapelPengampuList, rombelList]);
+    return [...allSchoolClasses, 'Semua Kelas'];
+  }, [isTeacher, currentUser, showAllRombels, taughtClasses, allSchoolClasses]);
 
   const [status, setStatus] = useState<'draft' | 'aktif' | 'selesai'>('aktif');
   const [selectedClasses, setSelectedClasses] = useState<string[]>(['XII 3']);
@@ -97,15 +137,26 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
     if (!isOpen || !exam) return;
     setStatus(exam.status || 'aktif');
 
-    const rawClasses = (exam.kelasTarget || []).filter(
-      (k) => !['X 1', 'X 2', 'XI 1', 'XI 2', 'XI 3', 'XI 4', 'XII 1', 'XII 2'].includes(k)
-    );
-    if (isTeacher && classChoices.length > 0) {
-      const allowedSet = new Set(classChoices.map((c) => c.toLowerCase()));
-      const filtered = rawClasses.filter((c) => allowedSet.has(c.toLowerCase()));
-      setSelectedClasses(filtered.length > 0 ? filtered : [classChoices[0]]);
+    // Automatically show all X, XI, XII rombels when teacher only has 1 tingkat or 0 classes assigned
+    const hasLevelX = taughtClasses.some((c) => /^X\b/i.test(c));
+    const hasLevelXI = taughtClasses.some((c) => /^XI\b/i.test(c));
+    const hasLevelXII = taughtClasses.some((c) => /^XII\b/i.test(c));
+    const missingLevels = !hasLevelX || !hasLevelXI || !hasLevelXII;
+    setShowAllRombels(isTeacher && (taughtClasses.length === 0 || missingLevels));
+
+    const rawClasses = (exam.kelasTarget || []).map((k) => k.trim()).filter(Boolean);
+    const availablePool = isTeacher
+      ? sortClassesNatural(Array.from(new Set([...taughtClasses, ...allSchoolClasses])))
+      : [...allSchoolClasses, 'Semua Kelas'];
+
+    if (rawClasses.length > 0) {
+      setSelectedClasses(rawClasses);
+    } else if (taughtClasses.length > 0) {
+      setSelectedClasses([taughtClasses[0]]);
+    } else if (availablePool.length > 0) {
+      setSelectedClasses([availablePool[0]]);
     } else {
-      setSelectedClasses(rawClasses.length > 0 ? rawClasses : ['XII 3', 'XII 4']);
+      setSelectedClasses(['XII 3', 'XII 4']);
     }
 
     if (exam.targetSiswaIds && exam.targetSiswaIds.length > 0) {
@@ -152,7 +203,7 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
         },
       ]);
     }
-  }, [exam, isOpen, isTeacher, classChoices]);
+  }, [exam, isOpen, isTeacher, taughtClasses, allSchoolClasses]);
 
   // Real-time clock tick for live countdowns (10-minute expiry)
   useEffect(() => {
@@ -426,55 +477,95 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
             </div>
           </div>
 
-          {/* 2. PILIH KELAS SASARAN (Khusus kelas yang diajar jika role guru) */}
+          {/* 2. PILIH KELAS SASARAN (X, XI, XII) */}
           <div className="p-4 bg-indigo-50/50 border border-indigo-200/80 rounded-2xl space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h4 className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
                   <School className="w-4 h-4 text-indigo-600" />
-                  <span>
-                    {isTeacher
-                      ? 'Kelas Sasaran (Khusus Kelas yang Anda Ajar)'
-                      : 'Kelas Sasaran Ujian (Tinggal Pilih Rombel)'}
-                  </span>
+                  <span>Kelas Sasaran Asesmen (Tingkat X, XI &amp; XII)</span>
                 </h4>
                 <p className="text-[11px] text-indigo-900/80 mt-0.5">
-                  Klik kelas di bawah untuk memilih rombel yang diizinkan mengikuti asesmen/tugas ini.
+                  Klik kelas di bawah untuk memilih rombel X, XI, atau XII yang diizinkan mengikuti asesmen/tugas ini.
                 </p>
               </div>
-              <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
-                {selectedClasses.includes('Semua Kelas')
-                  ? 'Semua Kelas Dipilih'
-                  : `${selectedClasses.length} Kelas Terpilih`}
-              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {isTeacher && taughtClasses.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllRombels((prev) => !prev)}
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50 transition cursor-pointer"
+                  >
+                    {showAllRombels ? 'Filter Kelas Ajar Saja' : 'Tampilkan Semua X, XI, XII'}
+                  </button>
+                )}
+                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                  {selectedClasses.includes('Semua Kelas')
+                    ? 'Semua Kelas Dipilih'
+                    : `${selectedClasses.length} Kelas Terpilih`}
+                </span>
+              </div>
             </div>
 
             {classChoices.length === 0 ? (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px]">
-                Belum ada kelas yang di-plotting ke akun Anda. Hubungi Administrator untuk mengatur kelas ajar.
+                Belum ada rombel kelas tersedia. Tambahkan rombel di panel Administrator.
               </div>
             ) : (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {classChoices.map((cls) => {
-                  const isSelected = selectedClasses.includes(cls);
+              <div className="space-y-2.5 pt-1">
+                {(['X', 'XI', 'XII', 'LAIN'] as const).map((lvl) => {
+                  const groupItems = classChoices.filter((cls) => {
+                    const up = cls.trim().toUpperCase();
+                    if (lvl === 'XII') return up.startsWith('XII');
+                    if (lvl === 'XI') return up.startsWith('XI') && !up.startsWith('XII');
+                    if (lvl === 'X') return up.startsWith('X') && !up.startsWith('XI') && !up.startsWith('XII');
+                    return !up.startsWith('X');
+                  });
+                  if (groupItems.length === 0) return null;
                   return (
-                    <button
-                      key={cls}
-                      type="button"
-                      onClick={() => toggleClass(cls)}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer ${
-                        isSelected
-                          ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-400/30'
-                          : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400'
-                      }`}
-                    >
-                      {isSelected ? (
-                        <Check className="w-3.5 h-3.5 stroke-[3]" />
-                      ) : (
-                        <span className="w-3.5 h-3.5 rounded-full border border-slate-300" />
-                      )}
-                      <span>{cls}</span>
-                    </button>
+                    <div key={lvl} className="space-y-1.5">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block">
+                        {lvl === 'LAIN' ? 'Opsi Umum' : `Kelas ${lvl}`}
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {groupItems.map((cls) => {
+                          const isSelected = selectedClasses.includes(cls);
+                          const isTaught = taughtClasses.some(
+                            (t) => t.toLowerCase() === cls.toLowerCase()
+                          );
+                          return (
+                            <button
+                              key={cls}
+                              type="button"
+                              onClick={() => toggleClass(cls)}
+                              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer ${
+                                isSelected
+                                  ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-400/30'
+                                  : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400'
+                              }`}
+                            >
+                              {isSelected ? (
+                                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                              ) : (
+                                <span className="w-3.5 h-3.5 rounded-full border border-slate-300" />
+                              )}
+                              <span>{cls}</span>
+                              {isTeacher && isTaught && (
+                                <span
+                                  className={`text-[9px] px-1.5 py-0.2 rounded-full ${
+                                    isSelected
+                                      ? 'bg-indigo-500 text-white'
+                                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  }`}
+                                >
+                                  Ajar
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })}
               </div>

@@ -8,6 +8,7 @@ import {
   ExamSubmission,
   LessonMaterial,
   AttendanceStatus,
+  AttendanceRecord,
 } from '../../types';
 import {
   BookOpen,
@@ -76,7 +77,22 @@ import { QuestionImageEditorModal } from './QuestionImageEditorModal';
 import { ExamViewModal } from '../common/ExamViewModal';
 import { MaterialViewModal } from '../common/MaterialViewModal';
 
-const DELETED_CLASSES_FILTER = ['XII 1', 'XII 2', 'Semua Kelas'];
+const DELETED_CLASSES_FILTER = ['Semua Kelas'];
+
+function sortKelasNatural(list: string[]): string[] {
+  const rank = (c: string) => {
+    const up = c.trim().toUpperCase();
+    if (up.startsWith('XII')) return 3;
+    if (up.startsWith('XI')) return 2;
+    if (up.startsWith('X')) return 1;
+    return 4;
+  };
+  return [...list].sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    return ra !== rb ? ra - rb : a.localeCompare(b, 'id-ID', { numeric: true });
+  });
+}
 
 export const GuruDashboard: React.FC = () => {
   const {
@@ -255,14 +271,15 @@ export const GuruDashboard: React.FC = () => {
       }))
     );
 
-  // Classes strictly taught by this teacher (from profile kelasAjar + kelasMapelPengampu plotting)
+  // Classes strictly taught by this teacher (from profile kelasAjar + kelasMapelPengampu plotting + wali kelas)
   const kelasDiajarList = useMemo(() => {
     if (!currentUser) return [];
     if (currentUser.role !== 'guru') {
-      return rombelList
-        .map((r) => r.nama.trim())
-        .filter((k) => k && !DELETED_CLASSES_FILTER.some((d) => d.toLowerCase() === k.toLowerCase()))
-        .sort();
+      return sortKelasNatural(
+        rombelList
+          .map((r) => r.nama.trim())
+          .filter((k) => k && !DELETED_CLASSES_FILTER.some((d) => d.toLowerCase() === k.toLowerCase()))
+      );
     }
 
     const fromProfile = currentUser.kelasAjar || [];
@@ -275,18 +292,23 @@ export const GuruDashboard: React.FC = () => {
             k.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
       )
       .map((k) => k.kelasNama);
+    const fromWali = rombelList
+      .filter((r) => r.waliKelasId === currentUser.id)
+      .map((r) => r.nama);
 
-    return Array.from(
-      new Set(
-        [...fromProfile, ...fromPlotting]
-          .map((k) => k.trim())
-          .filter(
-            (k) =>
-              Boolean(k) &&
-              !DELETED_CLASSES_FILTER.some((d) => d.toLowerCase() === k.toLowerCase())
-          )
+    return sortKelasNatural(
+      Array.from(
+        new Set(
+          [...fromProfile, ...fromPlotting, ...fromWali]
+            .map((k) => k.trim())
+            .filter(
+              (k) =>
+                Boolean(k) &&
+                !DELETED_CLASSES_FILTER.some((d) => d.toLowerCase() === k.toLowerCase())
+            )
+        )
       )
-    ).sort();
+    );
   }, [currentUser, kelasMapelPengampuList, rombelList]);
 
   // Exam & Material class choices strictly equal to classes taught by the teacher
@@ -432,7 +454,7 @@ export const GuruDashboard: React.FC = () => {
     });
 
     setAbsensiSaveNotice(
-      `Absensi kelas ${absensiKelas} tanggal ${absensiTanggal} berhasil disimpan ke Realtime Database!`
+      `Absensi kelas ${absensiKelas} tanggal ${absensiTanggal} berhasil disimpan ke Cloud Firestore!`
     );
   };
 
@@ -1490,24 +1512,39 @@ export const GuruDashboard: React.FC = () => {
                         <span>Lihat Roster Siswa ({siswaInClass.length})</span>
                       </button>
 
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-3 gap-1.5">
                         <button
                           type="button"
                           onClick={() => {
+                            setNewExamClasses([namaKelas]);
+                            setNewExamTargetMode('class');
+                            setNewExamTargetSiswaIds([]);
                             setNewExamData((prev) => ({
                               ...prev,
                               kelasTarget: namaKelas,
                               judul: `Asesmen Sumatif — ${namaKelas}`,
+                              jenisAsesmen: 'sumatif_lingkup_materi',
                             }));
                             setShowCreateExamModal(true);
                           }}
                           className="py-1.5 px-2 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold text-center transition cursor-pointer"
                         >
-                          + Ujian Kelas
+                          + Ujian/Tugas
                         </button>
                         <button
                           type="button"
                           onClick={() => {
+                            setAbsensiKelas(namaKelas);
+                            setActiveTab('absensi');
+                          }}
+                          className="py-1.5 px-2 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 text-[11px] font-bold text-center transition cursor-pointer"
+                        >
+                          Isi Absensi
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMaterialClasses([namaKelas]);
                             setMaterialForm((prev) => ({
                               ...prev,
                               kelasTarget: namaKelas,
@@ -1525,9 +1562,355 @@ export const GuruDashboard: React.FC = () => {
                 );
               })}
             </div>
+            {kelasDiajarList.length === 0 && (
+              <div className="text-center py-10 px-4 border border-dashed border-slate-300 rounded-2xl bg-slate-50">
+                <School className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm font-bold text-slate-700">Belum ada kelas yang di-plotting ke akun Anda</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Hubungi Administrator Madrasah untuk menetapkan daftar kelas yang Anda ajar.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
+
+      {/* TAB: Absensi Siswa (Khusus Kelas yang Diajar) */}
+      {activeTab === 'absensi' && (() => {
+        const countByStatus = (st: AttendanceStatus) =>
+          absensiStudents.filter((s) => (absensiMap[s.id]?.status || 'Hadir') === st).length;
+
+        return (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-teal-900 via-emerald-900 to-slate-900 rounded-3xl p-6 text-white shadow-md">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-teal-500/30 text-teal-200 border border-teal-400/30 mb-2">
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Presensi Harian Khusus Kelas yang Anda Ajar</span>
+                  </span>
+                  <h2 className="text-xl font-bold">Absensi Siswa — {currentUser?.mataPelajaran || 'Mata Pelajaran'}</h2>
+                  <p className="text-teal-100/80 text-xs mt-1">
+                    Anda hanya dapat mengisi dan melihat absensi untuk kelas yang menjadi tanggung jawab mengajar Anda ({kelasDiajarList.length} kelas).
+                  </p>
+                </div>
+                {kelasDiajarList.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allHadir: Record<string, { status: AttendanceStatus; keterangan: string }> = {};
+                        absensiStudents.forEach((s) => {
+                          allHadir[s.id] = { status: 'Hadir', keterangan: absensiMap[s.id]?.keterangan || '' };
+                        });
+                        setAbsensiMap(allHadir);
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold border border-white/20 transition cursor-pointer"
+                    >
+                      ✓ Tandai Semua Hadir
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportAbsensiExcel}
+                      disabled={absensiStudents.length === 0}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Ekspor Excel</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveAbsensi}
+                      disabled={absensiStudents.length === 0}
+                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-md"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Simpan Absensi</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {absensiSaveNotice && (
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{absensiSaveNotice}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAbsensiSaveNotice(null)}
+                  className="text-emerald-700 font-bold hover:underline cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            )}
+
+            {kelasDiajarList.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center">
+                <School className="w-12 h-12 text-slate-300 mx-auto mb-2" />
+                <h3 className="text-sm font-bold text-slate-800">Belum Ada Kelas Ajar</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Hubungi Administrator untuk memasukkan kelas ajar Anda agar dapat mengisi absensi siswa.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Kelas yang Diajar *</label>
+                      <select
+                        value={absensiKelas}
+                        onChange={(e) => {
+                          setAbsensiKelas(e.target.value);
+                          setAbsensiSaveNotice(null);
+                        }}
+                        className="w-full px-3 py-2 text-xs font-bold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-teal-500"
+                      >
+                        {kelasDiajarList.map((kls) => (
+                          <option key={kls} value={kls}>
+                            Kelas {kls}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Tanggal Pertemuan *</label>
+                      <input
+                        type="date"
+                        value={absensiTanggal}
+                        onChange={(e) => {
+                          setAbsensiTanggal(e.target.value);
+                          setAbsensiSaveNotice(null);
+                        }}
+                        className="w-full px-3 py-2 text-xs font-bold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-teal-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Materi / Topik Pertemuan</label>
+                      <input
+                        type="text"
+                        value={absensiTopik}
+                        onChange={(e) => setAbsensiTopik(e.target.value)}
+                        placeholder="Contoh: Pembahasan Bab 2 / Praktikum"
+                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quick class pills + status summary */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {kelasDiajarList.map((kls) => (
+                        <button
+                          key={kls}
+                          type="button"
+                          onClick={() => {
+                            setAbsensiKelas(kls);
+                            setAbsensiSaveNotice(null);
+                          }}
+                          className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer ${
+                            absensiKelas === kls
+                              ? 'bg-teal-600 text-white shadow-xs'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          {kls}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">
+                        Hadir: {countByStatus('Hadir')}
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-800">
+                        Izin: {countByStatus('Izin')}
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">
+                        Sakit: {countByStatus('Sakit')}
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-800">
+                        Alpa: {countByStatus('Alpa')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Attendance Table */}
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                  <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Daftar Siswa Kelas {absensiKelas} ({absensiStudents.length} Siswa)
+                    </h3>
+                    {existingAbsensiRecord && (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        ● Tersimpan ({new Date(existingAbsensiRecord.updatedAt).toLocaleTimeString('id-ID')})
+                      </span>
+                    )}
+                  </div>
+
+                  {absensiStudents.length === 0 ? (
+                    <div className="p-10 text-center text-xs text-slate-500">
+                      Belum ada siswa yang terdaftar pada kelas {absensiKelas}.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-600 font-bold uppercase text-[10px]">
+                          <tr>
+                            <th className="px-4 py-3">No</th>
+                            <th className="px-4 py-3">Nama Siswa</th>
+                            <th className="px-4 py-3">NISN</th>
+                            <th className="px-4 py-3">Status Kehadiran</th>
+                            <th className="px-4 py-3">Keterangan</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {absensiStudents.map((s, idx) => {
+                            const cur = absensiMap[s.id] || { status: 'Hadir' as AttendanceStatus, keterangan: '' };
+                            return (
+                              <tr key={s.id} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 font-mono text-slate-400">{idx + 1}</td>
+                                <td className="px-4 py-3 font-bold text-slate-900">{s.name}</td>
+                                <td className="px-4 py-3 font-mono text-slate-500">{s.nisn || `@${s.username}`}</td>
+                                <td className="px-4 py-3">
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {(['Hadir', 'Izin', 'Sakit', 'Alpa'] as AttendanceStatus[]).map((st) => {
+                                      const active = cur.status === st;
+                                      const colorClass =
+                                        st === 'Hadir'
+                                          ? active
+                                            ? 'bg-emerald-600 text-white border-emerald-600'
+                                            : 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+                                          : st === 'Izin'
+                                          ? active
+                                            ? 'bg-blue-600 text-white border-blue-600'
+                                            : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'
+                                          : st === 'Sakit'
+                                          ? active
+                                            ? 'bg-amber-500 text-white border-amber-500'
+                                            : 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50'
+                                          : active
+                                          ? 'bg-rose-600 text-white border-rose-600'
+                                          : 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50';
+                                      return (
+                                        <button
+                                          key={st}
+                                          type="button"
+                                          onClick={() =>
+                                            setAbsensiMap((prev) => ({
+                                              ...prev,
+                                              [s.id]: { ...cur, status: st },
+                                            }))
+                                          }
+                                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${colorClass}`}
+                                        >
+                                          {st}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <input
+                                    type="text"
+                                    value={cur.keterangan}
+                                    onChange={(e) =>
+                                      setAbsensiMap((prev) => ({
+                                        ...prev,
+                                        [s.id]: { ...cur, keterangan: e.target.value },
+                                      }))
+                                    }
+                                    placeholder="Catatan (opsional)..."
+                                    className="w-full min-w-[160px] px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500"
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Attendance History */}
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                  <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200">
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Riwayat Absensi Tersimpan ({myAttendanceHistory.length} Pertemuan)
+                    </h3>
+                  </div>
+                  {myAttendanceHistory.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-slate-400">
+                      Belum ada riwayat absensi tersimpan untuk kelas yang Anda ajar.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-200">
+                      {myAttendanceHistory.map((rec) => {
+                        const vals = Object.values(rec.records || {});
+                        const hCount = vals.filter((v) => v.status === 'Hadir').length;
+                        const iCount = vals.filter((v) => v.status === 'Izin').length;
+                        const sCount = vals.filter((v) => v.status === 'Sakit').length;
+                        const aCount = vals.filter((v) => v.status === 'Alpa').length;
+                        return (
+                          <div key={rec.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="px-2 py-0.5 rounded-md bg-teal-100 text-teal-800 text-[10px] font-bold">
+                                  Kelas {rec.kelasNama}
+                                </span>
+                                <span className="text-xs font-bold text-slate-800">{rec.tanggal}</span>
+                                {rec.materiTopik && (
+                                  <span className="text-xs text-slate-500">• {rec.materiTopik}</span>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap gap-2 mt-1.5 text-[11px] text-slate-600">
+                                <span>Hadir: <strong>{hCount}</strong></span>
+                                <span>• Izin: <strong>{iCount}</strong></span>
+                                <span>• Sakit: <strong>{sCount}</strong></span>
+                                <span>• Alpa: <strong className="text-rose-600">{aCount}</strong></span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAbsensiKelas(rec.kelasNama);
+                                  setAbsensiTanggal(rec.tanggal);
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition cursor-pointer"
+                              >
+                                Buka / Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`Hapus riwayat absensi kelas ${rec.kelasNama} tanggal ${rec.tanggal}?`)) {
+                                    deleteAttendance(rec.id);
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 border border-rose-200 transition cursor-pointer"
+                                title="Hapus Riwayat Absensi"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* TAB: Siswa per Kelas */}
       {activeTab === 'siswa_kelas' && (
@@ -1561,13 +1944,34 @@ export const GuruDashboard: React.FC = () => {
                       ...prev,
                       judul: 'Asesmen Sumatif Lingkup Materi',
                       jenisAsesmen: 'sumatif_lingkup_materi',
+                      useToken: true,
                     }));
+                    setNewExamTargetMode('class');
+                    setNewExamTargetSiswaIds([]);
                     setShowCreateExamModal(true);
                   }}
                   className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>+ Buat Asesmen Baru</span>
+                  <span>+ Buat Ujian</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewExamData((prev) => ({
+                      ...prev,
+                      judul: 'Tugas Terstruktur / Penugasan',
+                      jenisAsesmen: 'tugas',
+                      useToken: false,
+                    }));
+                    setNewExamTargetMode('class');
+                    setNewExamTargetSiswaIds([]);
+                    setShowCreateExamModal(true);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
+                >
+                  <ClipboardCheck className="w-4 h-4" />
+                  <span>+ Buat Tugas</span>
                 </button>
               </div>
             </div>
@@ -1682,6 +2086,16 @@ export const GuruDashboard: React.FC = () => {
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                             {ex.mataPelajaran}
                           </span>
+                          {ex.jenisAsesmen === 'tugas' && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                              📝 Tugas
+                            </span>
+                          )}
+                          {ex.targetSiswaIds && ex.targetSiswaIds.length > 0 && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                              🎯 Khusus {ex.targetSiswaIds.length} Siswa
+                            </span>
+                          )}
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                               ex.status === 'aktif'
@@ -1846,6 +2260,21 @@ export const GuruDashboard: React.FC = () => {
       )}
 
       {/* TAB 1: Daftar & Edit Soal Ujian Aktif */}
+      {activeTab === 'ujian' && !activeExam && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+          <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+          <h3 className="text-sm font-bold text-slate-800">Anda belum memiliki asesmen atau tugas</h3>
+          <p className="text-xs text-slate-500 mt-1 mb-4">Buat ujian atau tugas baru untuk mulai menyusun bank soal.</p>
+          <button
+            type="button"
+            onClick={() => setShowCreateExamModal(true)}
+            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold cursor-pointer"
+          >
+            + Buat Ujian / Tugas Baru
+          </button>
+        </div>
+      )}
+
       {activeTab === 'ujian' && activeExam && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200">
@@ -1989,9 +2418,11 @@ export const GuruDashboard: React.FC = () => {
                       )
                     ) {
                       deleteExam(activeExam.id);
-                      const remaining = exams.filter((e) => e.id !== activeExam.id);
+                      const remaining = myExams.filter((e) => e.id !== activeExam.id);
                       if (remaining.length > 0) {
                         setSelectedExamId(remaining[0].id);
+                      } else {
+                        setSelectedExamId('');
                       }
                     }
                   }}
@@ -2578,7 +3009,7 @@ export const GuruDashboard: React.FC = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">Mata Pelajaran</label>
                     <input
@@ -2591,15 +3022,43 @@ export const GuruDashboard: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Kelas Sasaran</label>
-                    <input
-                      type="text"
-                      required
-                      value={materialForm.kelasTarget}
-                      onChange={(e) => setMaterialForm({ ...materialForm, kelasTarget: e.target.value })}
-                      placeholder="XII 3, XII 4"
-                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                    />
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Kelas Sasaran (Khusus Kelas yang Anda Ajar) *
+                    </label>
+                    {kelasDiajarList.length === 0 ? (
+                      <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5">
+                        Belum ada kelas ajar pada akun Anda. Hubungi Administrator untuk plotting kelas.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {kelasDiajarList.map((kls) => {
+                          const selected = materialClasses.includes(kls);
+                          return (
+                            <button
+                              key={kls}
+                              type="button"
+                              onClick={() =>
+                                setMaterialClasses((prev) => {
+                                  if (prev.includes(kls)) {
+                                    const filtered = prev.filter((c) => c !== kls);
+                                    return filtered.length > 0 ? filtered : [kls];
+                                  }
+                                  return [...prev, kls];
+                                })
+                              }
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                                selected
+                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              {selected ? '✓ ' : ''}
+                              {kls}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -2613,70 +3072,26 @@ export const GuruDashboard: React.FC = () => {
               </form>
             </div>
 
-            {/* Daftar Materi PDF Terunggah */}
+            {/* Daftar Materi PDF Terunggah (Khusus Milik Guru Ini) */}
             <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Koleksi Materi PDF Aktif</h3>
+                  <h3 className="text-sm font-bold text-slate-900">Koleksi Materi PDF Saya</h3>
                   <p className="text-xs text-slate-500">
-                    Total {materials.length} materi telah dipublikasikan untuk siswa MAN 11 Jakarta.
+                    Total {myMaterials.length} dokumen materi Anda telah dipublikasikan ke kelas yang diajar.
                   </p>
                 </div>
 
-                {/* Filter Tab: Semua vs Milik Saya */}
-                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
-                  <button
-                    type="button"
-                    onClick={() => setMaterialOwnerFilter('all')}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
-                      materialOwnerFilter === 'all'
-                        ? 'bg-white text-slate-800 shadow-2xs'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    Semua ({materials.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMaterialOwnerFilter('mine')}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
-                      materialOwnerFilter === 'mine'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    Materi Saya (
-                    {
-                      materials.filter(
-                        (m) =>
-                          m.guruId === currentUser?.id ||
-                          (m.guruNama &&
-                            currentUser?.name &&
-                            m.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
-                      ).length
-                    }
-                    )
-                  </button>
-                </div>
+                <span className="px-3 py-1 text-xs font-bold rounded-xl bg-emerald-100 text-emerald-800 border border-emerald-200 self-start sm:self-auto">
+                  Materi Saya ({myMaterials.length})
+                </span>
               </div>
 
-              {materials.filter((m) => {
-                if (materialOwnerFilter === 'mine') {
-                  return (
-                    m.guruId === currentUser?.id ||
-                    (m.guruNama &&
-                      currentUser?.name &&
-                      m.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
-                  );
-                }
-                return true;
-              }).length === 0 ? (
+              {myMaterials.length === 0 ? (
                 <div className="text-center py-12 px-4 border border-dashed border-slate-200 rounded-xl">
                   <FolderOpen className="w-10 h-10 mx-auto text-slate-300 mb-2" />
                   <p className="text-xs font-bold text-slate-600">
-                    {materialOwnerFilter === 'mine'
-                      ? 'Anda belum mengunggah materi pelajaran apapun'
-                      : 'Belum ada materi pelajaran PDF'}
+                    Anda belum mengunggah materi pelajaran apapun
                   </p>
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     Gunakan formulir di sebelah kiri untuk mengunggah materi pelajaran Anda.
@@ -2684,26 +3099,8 @@ export const GuruDashboard: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {materials
-                    .filter((m) => {
-                      if (materialOwnerFilter === 'mine') {
-                        return (
-                          m.guruId === currentUser?.id ||
-                          (m.guruNama &&
-                            currentUser?.name &&
-                            m.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
-                        );
-                      }
-                      return true;
-                    })
-                    .map((m) => {
-                      const isMaterialOwner =
-                        m.guruId === currentUser?.id ||
-                        (m.guruNama &&
-                          currentUser?.name &&
-                          m.guruNama.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
-                        (!m.guruId && !m.guruNama) ||
-                        currentUser?.role === 'admin';
+                  {myMaterials.map((m) => {
+                    const isMaterialOwner = true;
 
                       return (
                         <div
@@ -2823,6 +3220,14 @@ export const GuruDashboard: React.FC = () => {
       )}
 
       {/* TAB 4: Koreksi & Rekap Nilai */}
+      {activeTab === 'koreksi' && !activeExam && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+          <Award className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+          <h3 className="text-sm font-bold text-slate-800">Belum ada ujian untuk dikoreksi</h3>
+          <p className="text-xs text-slate-500 mt-1">Buat ujian atau tugas terlebih dahulu untuk melihat rekapitulasi nilai.</p>
+        </div>
+      )}
+
       {activeTab === 'koreksi' && activeExam && (() => {
         const availableKoreksiClasses = Array.from(
           new Set([
@@ -3089,6 +3494,74 @@ export const GuruDashboard: React.FC = () => {
               </div>
             </div>
 
+            {/* Cheating Report Summary Bar inside Koreksi & Rekap Nilai */}
+            {(() => {
+              const flaggedSubs = sortedSubmissions.filter((s) => (s.violations?.length || 0) > 0);
+              const totalIncidents = flaggedSubs.reduce((acc, s) => acc + (s.violations?.length || 0), 0);
+              return (
+                <div className={`px-5 py-3 border-b ${flaggedSubs.length > 0 ? 'bg-rose-50/70 border-rose-200' : 'bg-emerald-50/50 border-emerald-200'}`}>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs">
+                      <ShieldAlert className={`w-4 h-4 ${flaggedSubs.length > 0 ? 'text-rose-600' : 'text-emerald-600'}`} />
+                      {flaggedSubs.length > 0 ? (
+                        <span className="font-bold text-rose-900">
+                          Laporan Kecurangan: {flaggedSubs.length} siswa terdeteksi melakukan total {totalIncidents} pelanggaran (termasuk dalam ekspor PDF & Excel).
+                        </span>
+                      ) : (
+                        <span className="font-bold text-emerald-800">
+                          Integritas Ujian Terjaga: Belum ada pelanggaran kecurangan terdeteksi pada peserta ujian ini.
+                        </span>
+                      )}
+                    </div>
+                    {flaggedSubs.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowCheatingDetailsInKoreksi((prev) => !prev)}
+                        className="px-3 py-1 rounded-lg bg-white border border-rose-300 text-rose-700 hover:bg-rose-100 text-[11px] font-bold transition cursor-pointer self-start sm:self-auto"
+                      >
+                        {showCheatingDetailsInKoreksi
+                          ? 'Sembunyikan Rincian Pelanggaran'
+                          : `Lihat Rincian Pelanggaran (${totalIncidents})`}
+                      </button>
+                    )}
+                  </div>
+
+                  {showCheatingDetailsInKoreksi && flaggedSubs.length > 0 && (
+                    <div className="mt-3 space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {flaggedSubs.map((fs) => (
+                        <div key={fs.id} className="bg-white rounded-xl border border-rose-200 p-3 text-xs">
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <div>
+                              <span className="font-bold text-slate-900">{fs.siswaNama}</span>{' '}
+                              <span className="text-[11px] text-slate-500 font-semibold">({fs.siswaKelas})</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => openReviewModal(fs)}
+                              className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] cursor-pointer"
+                            >
+                              Buka Koreksi &amp; Detail
+                            </button>
+                          </div>
+                          <ul className="space-y-1 text-[11px] text-slate-600">
+                            {(fs.violations || []).map((v, vIdx) => (
+                              <li key={v.id || vIdx} className="flex items-start gap-2">
+                                <span className="font-mono text-slate-400 shrink-0">
+                                  [{v.timestamp ? new Date(v.timestamp).toLocaleTimeString('id-ID') : '-'}]
+                                </span>
+                                <span className="font-bold uppercase text-rose-700 shrink-0">{v.tipe}:</span>
+                                <span>{v.deskripsi}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Table of Submissions with Individual Reset Button */}
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
@@ -3159,10 +3632,15 @@ export const GuruDashboard: React.FC = () => {
                           </td>
                           <td className="px-4 py-3">
                             {violationCount > 0 ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[10px] bg-rose-100 text-rose-800">
+                              <button
+                                type="button"
+                                onClick={() => openReviewModal(sub)}
+                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-200 transition cursor-pointer"
+                                title="Klik untuk melihat rincian log kecurangan siswa"
+                              >
                                 <ShieldAlert className="w-3 h-3 text-rose-600" />
                                 {violationCount}x Peringatan
-                              </span>
+                              </button>
                             ) : (
                               <span className="text-emerald-600 font-bold text-[11px]">Bersih (0)</span>
                             )}
@@ -3216,6 +3694,14 @@ export const GuruDashboard: React.FC = () => {
       })()}
 
       {/* TAB 5: Analisis Butir Soal */}
+      {activeTab === 'analisis' && !activeExam && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+          <BarChart3 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+          <h3 className="text-sm font-bold text-slate-800">Belum ada ujian untuk dianalisis</h3>
+          <p className="text-xs text-slate-500 mt-1">Pilih atau buat ujian terlebih dahulu untuk melihat analisis butir soal.</p>
+        </div>
+      )}
+
       {activeTab === 'analisis' && activeExam && (
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
           <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/50">
@@ -3420,7 +3906,7 @@ export const GuruDashboard: React.FC = () => {
                     onChange={(e) =>
                       setNewExamData({
                         ...newExamData,
-                        jenisAsesmen: e.target.value as 'sumatif_lingkup_materi' | 'sumatif_akhir_semester' | 'formatif',
+                        jenisAsesmen: e.target.value as 'sumatif_lingkup_materi' | 'sumatif_akhir_semester' | 'formatif' | 'tugas',
                       })
                     }
                     className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium focus:ring-2 focus:ring-indigo-500"
@@ -3428,6 +3914,7 @@ export const GuruDashboard: React.FC = () => {
                     <option value="sumatif_lingkup_materi">Asesmen Sumatif Lingkup Materi (ASLM)</option>
                     <option value="sumatif_akhir_semester">Asesmen Sumatif Akhir Semester (ASAS / ASTS)</option>
                     <option value="formatif">Asesmen Formatif / Latihan Harian</option>
+                    <option value="tugas">Tugas / Penugasan Kelas &amp; Individu</option>
                   </select>
                 </div>
 
@@ -3479,47 +3966,155 @@ export const GuruDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="p-3 bg-indigo-50/50 border border-indigo-200/80 rounded-2xl space-y-2">
+                <div className="p-3 bg-indigo-50/50 border border-indigo-200/80 rounded-2xl space-y-3">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-slate-800">
-                      Kelas Sasaran (Tinggal Pilih Rombel)
+                      Kelas Sasaran (Khusus Kelas yang Anda Ajar)
                     </label>
                     <span className="text-[11px] font-bold text-indigo-700">
                       {newExamClasses.length} Kelas Dipilih
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {examClassChoices.map((cls) => {
-                      const isSelected = newExamClasses.includes(cls);
-                      return (
+                  {examClassChoices.length === 0 ? (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900">
+                      Belum ada kelas yang di-plotting ke akun Anda. Hubungi Administrator.
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {examClassChoices.map((cls) => {
+                        const isSelected = newExamClasses.includes(cls);
+                        return (
+                          <button
+                            key={cls}
+                            type="button"
+                            onClick={() => {
+                              let next = [...newExamClasses];
+                              if (next.includes(cls)) {
+                                next = next.filter((c) => c !== cls);
+                              } else {
+                                next = [...next, cls];
+                              }
+                              if (next.length === 0) next = [cls];
+                              setNewExamClasses(next);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                            <span>{cls}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Target Peserta Siswa: Semua di Kelas vs Siswa Tertentu */}
+                  <div className="pt-2.5 border-t border-indigo-200/80 space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-indigo-950">Target Peserta Siswa:</span>
+                      <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-indigo-200">
                         <button
-                          key={cls}
                           type="button"
-                          onClick={() => {
-                            if (cls === 'Semua Kelas') {
-                              setNewExamClasses(newExamClasses.includes('Semua Kelas') ? ['XII 3'] : ['Semua Kelas']);
-                              return;
-                            }
-                            let next = newExamClasses.filter((c) => c !== 'Semua Kelas');
-                            if (next.includes(cls)) {
-                              next = next.filter((c) => c !== cls);
-                            } else {
-                              next = [...next, cls];
-                            }
-                            if (next.length === 0) next = [cls];
-                            setNewExamClasses(next);
-                          }}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                            isSelected
-                              ? 'bg-indigo-600 text-white shadow-xs'
-                              : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
+                          onClick={() => setNewExamTargetMode('class')}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                            newExamTargetMode === 'class' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
                           }`}
                         >
-                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                          <span>{cls}</span>
+                          Semua Siswa di Kelas
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewExamTargetMode('students')}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                            newExamTargetMode === 'students' ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          Siswa Tertentu ({newExamTargetSiswaIds.length})
+                        </button>
+                      </div>
+                    </div>
+
+                    {newExamTargetMode === 'students' && (() => {
+                      const selectedClassSet = new Set(newExamClasses.map((c) => c.trim().toLowerCase()));
+                      const eligibleStudents = myTaughtStudents.filter(
+                        (s) => s.kelas && selectedClassSet.has(s.kelas.trim().toLowerCase())
                       );
-                    })}
+                      const filtered = newExamStudentSearch.trim()
+                        ? eligibleStudents.filter(
+                            (s) =>
+                              s.name.toLowerCase().includes(newExamStudentSearch.toLowerCase()) ||
+                              (s.nisn && s.nisn.includes(newExamStudentSearch))
+                          )
+                        : eligibleStudents;
+
+                      return (
+                        <div className="bg-white rounded-xl border border-indigo-200 p-2.5 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={newExamStudentSearch}
+                              onChange={(e) => setNewExamStudentSearch(e.target.value)}
+                              placeholder="Cari nama / NISN siswa di kelas terpilih..."
+                              className="flex-1 px-2.5 py-1.5 text-[11px] bg-slate-50 border border-slate-200 rounded-lg"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setNewExamTargetSiswaIds(eligibleStudents.map((s) => s.id))}
+                              className="px-2 py-1 text-[10px] font-bold bg-indigo-50 text-indigo-700 rounded cursor-pointer"
+                            >
+                              Semua
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setNewExamTargetSiswaIds([])}
+                              className="px-2 py-1 text-[10px] font-bold bg-slate-100 text-slate-600 rounded cursor-pointer"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                          {filtered.length === 0 ? (
+                            <p className="text-[11px] text-slate-400 text-center py-2">
+                              Tidak ada siswa ditemukan di kelas sasaran terpilih.
+                            </p>
+                          ) : (
+                            <div className="max-h-36 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                              {filtered.map((st) => {
+                                const checked = newExamTargetSiswaIds.includes(st.id);
+                                return (
+                                  <label
+                                    key={st.id}
+                                    className={`flex items-center gap-2 p-1.5 rounded-lg border text-[11px] cursor-pointer ${
+                                      checked
+                                        ? 'bg-amber-50 border-amber-300 font-semibold text-amber-950'
+                                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() =>
+                                        setNewExamTargetSiswaIds((prev) =>
+                                          prev.includes(st.id)
+                                            ? prev.filter((id) => id !== st.id)
+                                            : [...prev, st.id]
+                                        )
+                                      }
+                                      className="rounded border-slate-300 text-amber-600"
+                                    />
+                                    <span className="truncate">
+                                      {st.name} <span className="text-[10px] text-slate-400">({st.kelas})</span>
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -3638,8 +4233,50 @@ export const GuruDashboard: React.FC = () => {
                 </div>
               </div>
 
+              {/* Laporan Kecurangan & Integritas Ujian */}
+              <div
+                className={`mb-4 p-3 rounded-xl border text-xs ${
+                  (reviewSubmission.violations?.length || 0) > 0
+                    ? 'bg-rose-50 border-rose-200 text-rose-900'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                }`}
+              >
+                <div className="flex items-center justify-between font-bold mb-1">
+                  <span className="flex items-center gap-1.5">
+                    <ShieldAlert
+                      className={`w-4 h-4 ${
+                        (reviewSubmission.violations?.length || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'
+                      }`}
+                    />
+                    <span>Laporan Kecurangan &amp; Integritas Ujian</span>
+                  </span>
+                  <span>
+                    {(reviewSubmission.violations?.length || 0) > 0
+                      ? `${reviewSubmission.violations.length} Pelanggaran Tercatat`
+                      : 'Bersih (0 Pelanggaran)'}
+                  </span>
+                </div>
+                {(reviewSubmission.violations?.length || 0) > 0 ? (
+                  <ul className="space-y-1 max-h-24 overflow-y-auto text-[11px] mt-1.5">
+                    {reviewSubmission.violations.map((v, vIdx) => (
+                      <li key={v.id || vIdx} className="bg-white/80 rounded-lg px-2 py-1 border border-rose-200/80">
+                        <span className="font-mono text-slate-500 mr-1.5">
+                          {v.timestamp ? new Date(v.timestamp).toLocaleTimeString('id-ID') : '-'}
+                        </span>
+                        <span className="font-bold uppercase text-rose-700 mr-1">[{v.tipe}]</span>
+                        <span>{v.deskripsi}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[11px] text-emerald-800">
+                    Tidak ada aktivitas mencurigakan atau perpindahan tab selama siswa mengerjakan.
+                  </p>
+                )}
+              </div>
+
               {/* Answers list */}
-              <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-2">
+              <div className="space-y-3 max-h-[38vh] overflow-y-auto pr-2">
                 {activeExam?.soalList.map((soal, i) => {
                   const studentAns = reviewSubmission.jawabanMap[soal.id];
                   return (
@@ -3902,7 +4539,9 @@ export const GuruDashboard: React.FC = () => {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {classStudents.map((s, idx) => {
-                          const studentSubs = submissions.filter((sub) => sub.siswaId === s.id || sub.siswaNama === s.name);
+                          const studentSubs = submissions.filter(
+                            (sub) => myExamIds.has(sub.examId) && (sub.siswaId === s.id || sub.siswaNama === s.name)
+                          );
                           const studentAvg =
                             studentSubs.length > 0
                               ? Math.round(

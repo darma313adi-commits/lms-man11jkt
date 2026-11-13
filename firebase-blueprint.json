@@ -126,6 +126,23 @@
         "status": { "type": "string", "enum": ["sedang_mengerjakan", "sudah_dikumpulkan", "terkunci_curang"] }
       },
       "required": ["id", "examId", "siswaId", "status"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Class attendance log per date and teacher",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tanggal": { "type": "string" },
+        "kelasNama": { "type": "string" },
+        "mataPelajaran": { "type": "string" },
+        "guruId": { "type": "string" },
+        "guruNama": { "type": "string" },
+        "materiTopik": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "tanggal", "kelasNama", "guruId"]
     }
   },
   "firestore": {
@@ -156,6 +173,10 @@
     "/submissions/{submissionId}": {
       "schema": { "$ref": "#/entities/ExamSubmission" },
       "description": "Student exam submissions and grades"
+    },
+    "/absensi/{absensiId}": {
+      "schema": { "$ref": "#/entities/AttendanceRecord" },
+      "description": "Teacher attendance records for classes taught"
     }
   }
 }

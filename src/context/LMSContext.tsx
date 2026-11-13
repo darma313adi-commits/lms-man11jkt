@@ -23,7 +23,15 @@ import {
 } from '../data/initialData';
 import { calculateExamScore } from '../utils/examScoring';
 import { validatePasswordChange } from '../utils/authUtils';
-import { ref, get, set, remove, update, onValue } from 'firebase/database';
+import {
+  collection,
+  doc,
+  getDocs,
+  setDoc,
+  deleteDoc,
+  onSnapshot,
+  writeBatch,
+} from 'firebase/firestore';
 import { db } from '../firebase';
 
 export interface LocalExamDraft {
@@ -188,9 +196,9 @@ function mergeLocalDraftIntoSubmission(
 }
 
 /**
- * Deleted classes per user instruction (X 1, X 2, XI 1, XI 2, XI 3, XI 4, XII 1, XII 2)
+ * Deleted classes filter cleared so all levels (X, XI, XII) remain intact
  */
-export const DELETED_CLASSES = ['X 1', 'X 2', 'XI 1', 'XI 2', 'XI 3', 'XI 4', 'XII 1', 'XII 2'];
+export const DELETED_CLASSES: string[] = [];
 
 /**
  * Deleted teachers per user instruction (Dra. Siti Aminah, M.Pd & Bambang Prakoso, S.Pd)
@@ -212,33 +220,29 @@ export function isDeletedTeacher(u?: Partial<User> | null): boolean {
 }
 
 /**
- * Helper to remove legacy MIPA, MIA, IPS from class names into clean Kurikulum Merdeka numbering
+ * Helper to remove legacy MIPA, MIA, IPS from class names while preserving level (X, XI, XII)
  */
 export function sanitizeClassName(rawName?: string): string {
   if (!rawName) return '';
   return rawName
-    .replace(/XI\s+IPS\s+1/gi, 'XII 3')
-    .replace(/XI\s+IPS\s+2/gi, 'XII 3')
-    .replace(/XII\s+IPS\s+1/gi, 'XII 4')
-    .replace(/XII\s+IPS\s+2/gi, 'XII 4')
     .replace(/\b(MIPA|MIA|IPA|IPS)\s*/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 /**
- * Clean data for Firebase Realtime Database (remove `undefined` values completely)
+ * Clean data for Cloud Firestore (strip `undefined` values completely)
  */
-function cleanForRTDB<T>(data: T): T {
+function cleanForFirestore<T>(data: T): T {
   if (data === null || data === undefined) return null as any;
   if (Array.isArray(data)) {
-    return data.map((item) => cleanForRTDB(item)) as any;
+    return data.map((item) => (item === undefined ? null : cleanForFirestore(item))) as any;
   }
   if (typeof data === 'object') {
     const res: any = {};
     for (const [key, value] of Object.entries(data)) {
       if (value !== undefined) {
-        res[key] = cleanForRTDB(value);
+        res[key] = cleanForFirestore(value);
       }
     }
     return res;
@@ -247,7 +251,7 @@ function cleanForRTDB<T>(data: T): T {
 }
 
 /**
- * Defensive converter for RTDB snapshots (handles arrays stored as objects or omitted empty arrays)
+ * Defensive converter for Firestore snapshots (handles arrays stored as objects or omitted fields)
  */
 function toArray<T>(val: any): T[] {
   if (!val) return [];
@@ -392,13 +396,24 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       const saved = localStorage.getItem(STORAGE_KEY_ROMBEL);
       const parsed: RombelKelas[] = saved ? JSON.parse(saved) : INITIAL_ROMBEL;
-      return parsed
+      const cleaned = parsed
         .map((r) => ({
           ...r,
           nama: sanitizeClassName(r.nama),
           jurusan: r.jurusan === 'MIPA' || r.jurusan === 'IPS' ? 'Umum' : r.jurusan,
         }))
         .filter((r) => !DELETED_CLASSES.includes(r.nama));
+      // Ensure X, XI, XII exist if legacy storage was missing XI/XII
+      const existingNames = new Set(cleaned.map((r) => r.nama.toLowerCase()));
+      const hasXI = cleaned.some((r) => r.tingkat === 'XI' || /^XI\b/i.test(r.nama));
+      const hasXII = cleaned.some((r) => r.tingkat === 'XII' || /^XII\b/i.test(r.nama));
+      const additions = INITIAL_ROMBEL.filter((ir) => {
+        if (existingNames.has(ir.nama.toLowerCase())) return false;
+        if (!hasXI && ir.tingkat === 'XI') return true;
+        if (!hasXII && ir.tingkat === 'XII') return true;
+        return false;
+      });
+      return [...cleaned, ...additions];
     } catch {
       return INITIAL_ROMBEL;
     }
@@ -503,7 +518,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [currentUser]);
 
-  // --- Real-time Firebase Realtime Database (RTDB) Listeners & Cloud Sync ---
+  // --- Real-time Cloud Firestore Listeners & Cloud Sync ---
   useEffect(() => {
     if (!db) return;
 
@@ -511,49 +526,58 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (isInitialSeedDone.current) return;
       isInitialSeedDone.current = true;
       try {
-        const rootUpdates: Record<string, any> = {};
-        INITIAL_USERS.forEach((u) => {
-          rootUpdates[`users/${u.id}`] = cleanForRTDB(u);
-        });
-        INITIAL_ROMBEL.forEach((r) => {
-          rootUpdates[`rombels/${r.id}`] = cleanForRTDB(r);
-        });
-        INITIAL_MAPEL.forEach((m) => {
-          rootUpdates[`mataPelajaran/${m.id}`] = cleanForRTDB(m);
-        });
-        INITIAL_KELAS_MAPEL.forEach((kmp) => {
-          rootUpdates[`kelasMapelPengampu/${kmp.id}`] = cleanForRTDB(kmp);
-        });
-        INITIAL_EXAMS.forEach((e) => {
-          rootUpdates[`exams/${e.id}`] = cleanForRTDB(e);
-        });
-        INITIAL_MATERIALS.forEach((m) => {
-          rootUpdates[`materials/${m.id}`] = cleanForRTDB(m);
-        });
-        INITIAL_SUBMISSIONS.forEach((s) => {
-          rootUpdates[`submissions/${s.id}`] = cleanForRTDB(s);
-        });
-        await update(ref(db), rootUpdates);
+        const ops: Array<{ col: string; id: string; data: any }> = [];
+        INITIAL_USERS.forEach((u) =>
+          ops.push({ col: 'users', id: u.id, data: cleanForFirestore(u) })
+        );
+        INITIAL_ROMBEL.forEach((r) =>
+          ops.push({ col: 'rombels', id: r.id, data: cleanForFirestore(r) })
+        );
+        INITIAL_MAPEL.forEach((m) =>
+          ops.push({ col: 'mataPelajaran', id: m.id, data: cleanForFirestore(m) })
+        );
+        INITIAL_KELAS_MAPEL.forEach((kmp) =>
+          ops.push({ col: 'kelasMapelPengampu', id: kmp.id, data: cleanForFirestore(kmp) })
+        );
+        INITIAL_EXAMS.forEach((e) =>
+          ops.push({ col: 'exams', id: e.id, data: cleanForFirestore(e) })
+        );
+        INITIAL_MATERIALS.forEach((m) =>
+          ops.push({ col: 'materials', id: m.id, data: cleanForFirestore(m) })
+        );
+        INITIAL_SUBMISSIONS.forEach((s) =>
+          ops.push({ col: 'submissions', id: s.id, data: cleanForFirestore(s) })
+        );
+
+        for (let i = 0; i < ops.length; i += 450) {
+          const batch = writeBatch(db);
+          ops.slice(i, i + 450).forEach((op) => {
+            batch.set(doc(db, op.col, op.id), op.data);
+          });
+          await batch.commit();
+        }
         setIsCloudSynced(true);
       } catch (err) {
-        console.warn('Auto-seed RTDB error:', err);
+        console.warn('Auto-seed Firestore error:', err);
       }
     };
 
     // 1. Users Listener
-    const unsubUsers = onValue(
-      ref(db, 'users'),
+    const unsubUsers = onSnapshot(
+      collection(db, 'users'),
       (snapshot) => {
         setIsCloudSynced(true);
-        const val = snapshot.val();
-        if (!val) {
+        if (snapshot.empty) {
           seedCloudIfEmpty();
           return;
         }
-        const entries = Object.entries(val) as [string, User][];
+        const entries: [string, User][] = snapshot.docs.map((d) => [
+          d.id,
+          d.data() as User,
+        ]);
         entries.forEach(([id, uData]) => {
           if (isDeletedTeacher(uData)) {
-            remove(ref(db, `users/${id}`)).catch(() => {});
+            deleteDoc(doc(db, 'users', id)).catch(() => {});
           }
         });
 
@@ -563,7 +587,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         if (!rawLoaded.some((u) => u.username === 'darma313adi')) {
           const admin = INITIAL_USERS[0];
-          set(ref(db, `users/${admin.id}`), cleanForRTDB(admin)).catch(() => {});
+          setDoc(doc(db, 'users', admin.id), cleanForFirestore(admin)).catch(() => {});
           rawLoaded.unshift(admin);
         }
 
@@ -580,7 +604,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             (u.kelasAjar && JSON.stringify(u.kelasAjar) !== JSON.stringify(cleanKA))
           ) {
             const updatedU = { ...u, kelas: cleanK, kelasAjar: cleanKA };
-            set(ref(db, `users/${u.id}`), cleanForRTDB(updatedU)).catch(() => {});
+            setDoc(doc(db, 'users', u.id), cleanForFirestore(updatedU)).catch(() => {});
             return updatedU;
           }
           return { ...u, kelas: cleanK, kelasAjar: cleanKA };
@@ -599,66 +623,87 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
         }
       },
-      (err) => console.warn('RTDB Users Listener error:', err)
+      (err) => console.warn('Firestore Users Listener error:', err)
     );
 
     // 2. Rombel Listener
-    const unsubRombel = onValue(
-      ref(db, 'rombels'),
+    const unsubRombel = onSnapshot(
+      collection(db, 'rombels'),
       (snapshot) => {
-        const val = snapshot.val();
-        if (!val) return;
-        const rawRombels = toArray<RombelKelas>(val);
+        if (snapshot.empty) return;
+        const rawRombels: RombelKelas[] = snapshot.docs.map((d) => {
+          const data = d.data() as RombelKelas;
+          return { ...data, id: data.id || d.id };
+        });
         const loadedRombels: RombelKelas[] = [];
         for (const r of rawRombels) {
           const cleanN = sanitizeClassName(r.nama);
           if (DELETED_CLASSES.includes(cleanN)) {
-            remove(ref(db, `rombels/${r.id}`)).catch(() => {});
+            deleteDoc(doc(db, 'rombels', r.id)).catch(() => {});
             continue;
           }
           const cleanJ = r.jurusan === 'MIPA' || r.jurusan === 'IPS' ? 'Umum' : r.jurusan;
           if (r.nama !== cleanN || r.jurusan !== cleanJ) {
             const updatedR = { ...r, nama: cleanN, jurusan: cleanJ };
-            set(ref(db, `rombels/${r.id}`), cleanForRTDB(updatedR)).catch(() => {});
+            setDoc(doc(db, 'rombels', r.id), cleanForFirestore(updatedR)).catch(() => {});
             loadedRombels.push(updatedR);
           } else {
             loadedRombels.push(r);
           }
         }
+        // Auto-restore missing XI or XII rombels if previously stripped
+        const existingNames = new Set(loadedRombels.map((r) => r.nama.trim().toLowerCase()));
+        const hasXI = loadedRombels.some((r) => r.tingkat === 'XI' || /^XI\b/i.test(r.nama));
+        const hasXII = loadedRombels.some((r) => r.tingkat === 'XII' || /^XII\b/i.test(r.nama));
+        for (const ir of INITIAL_ROMBEL) {
+          if (
+            !existingNames.has(ir.nama.trim().toLowerCase()) &&
+            ((!hasXI && ir.tingkat === 'XI') || (!hasXII && ir.tingkat === 'XII'))
+          ) {
+            loadedRombels.push(ir);
+            setDoc(doc(db, 'rombels', ir.id), cleanForFirestore(ir)).catch(() => {});
+          }
+        }
         setRombelList(loadedRombels);
       },
-      (err) => console.warn('RTDB Rombels Listener error:', err)
+      (err) => console.warn('Firestore Rombels Listener error:', err)
     );
 
     // 3. Mata Pelajaran Listener
-    const unsubMapel = onValue(
-      ref(db, 'mataPelajaran'),
+    const unsubMapel = onSnapshot(
+      collection(db, 'mataPelajaran'),
       (snapshot) => {
-        const val = snapshot.val();
-        if (val) {
-          setMataPelajaranList(toArray<MataPelajaran>(val));
+        if (!snapshot.empty) {
+          setMataPelajaranList(
+            snapshot.docs.map((d) => {
+              const data = d.data() as MataPelajaran;
+              return { ...data, id: data.id || d.id };
+            })
+          );
         }
       },
-      (err) => console.warn('RTDB Mapel Listener error:', err)
+      (err) => console.warn('Firestore Mapel Listener error:', err)
     );
 
     // 4. Kelas Mapel Pengampu Listener
-    const unsubKelasMapel = onValue(
-      ref(db, 'kelasMapelPengampu'),
+    const unsubKelasMapel = onSnapshot(
+      collection(db, 'kelasMapelPengampu'),
       (snapshot) => {
-        const val = snapshot.val();
-        if (!val) return;
-        const rawKmp = toArray<KelasMapelPengampu>(val);
+        if (snapshot.empty) return;
+        const rawKmp: KelasMapelPengampu[] = snapshot.docs.map((d) => {
+          const data = d.data() as KelasMapelPengampu;
+          return { ...data, id: data.id || d.id };
+        });
         const loadedKmp: KelasMapelPengampu[] = [];
         for (const k of rawKmp) {
           const cleanKN = sanitizeClassName(k.kelasNama);
           if (DELETED_CLASSES.includes(cleanKN)) {
-            remove(ref(db, `kelasMapelPengampu/${k.id}`)).catch(() => {});
+            deleteDoc(doc(db, 'kelasMapelPengampu', k.id)).catch(() => {});
             continue;
           }
           if (k.kelasNama !== cleanKN) {
             const updatedK = { ...k, kelasNama: cleanKN };
-            set(ref(db, `kelasMapelPengampu/${k.id}`), cleanForRTDB(updatedK)).catch(() => {});
+            setDoc(doc(db, 'kelasMapelPengampu', k.id), cleanForFirestore(updatedK)).catch(() => {});
             loadedKmp.push(updatedK);
           } else {
             loadedKmp.push(k);
@@ -666,16 +711,19 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
         setKelasMapelPengampuList(loadedKmp);
       },
-      (err) => console.warn('RTDB Plotting Listener error:', err)
+      (err) => console.warn('Firestore Plotting Listener error:', err)
     );
 
     // 5. Exams Listener
-    const unsubExams = onValue(
-      ref(db, 'exams'),
+    const unsubExams = onSnapshot(
+      collection(db, 'exams'),
       (snapshot) => {
-        const val = snapshot.val();
-        if (!val) return;
-        const rawExams = toArray<Exam>(val).map(normalizeExam);
+        if (snapshot.empty) return;
+        const rawExams = snapshot.docs
+          .map((d) => {
+            const data = d.data() as Exam;
+            return normalizeExam({ ...data, id: data.id || d.id });
+          });
         const loadedExams = rawExams.map((e) => {
           let cleanKT = (e.kelasTarget || [])
             .map(sanitizeClassName)
@@ -683,23 +731,26 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (cleanKT.length === 0) cleanKT = ['XII 3', 'XII 4'];
           if (JSON.stringify(e.kelasTarget) !== JSON.stringify(cleanKT)) {
             const updatedE = { ...e, kelasTarget: cleanKT };
-            set(ref(db, `exams/${e.id}`), cleanForRTDB(updatedE)).catch(() => {});
+            setDoc(doc(db, 'exams', e.id), cleanForFirestore(updatedE)).catch(() => {});
             return updatedE;
           }
           return { ...e, kelasTarget: cleanKT };
         });
         setExams(loadedExams);
       },
-      (err) => console.warn('RTDB Exams Listener error:', err)
+      (err) => console.warn('Firestore Exams Listener error:', err)
     );
 
     // 6. Materials Listener
-    const unsubMaterials = onValue(
-      ref(db, 'materials'),
+    const unsubMaterials = onSnapshot(
+      collection(db, 'materials'),
       (snapshot) => {
-        const val = snapshot.val();
-        if (!val) return;
-        const rawMats = toArray<LessonMaterial>(val).map(normalizeMaterial);
+        if (snapshot.empty) return;
+        const rawMats = snapshot.docs
+          .map((d) => {
+            const data = d.data() as LessonMaterial;
+            return normalizeMaterial({ ...data, id: data.id || d.id });
+          });
         const loadedMats = rawMats.map((m) => {
           let cleanKT = (m.kelasTarget || [])
             .map(sanitizeClassName)
@@ -707,26 +758,29 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (cleanKT.length === 0) cleanKT = ['XII 3', 'XII 4'];
           if (JSON.stringify(m.kelasTarget) !== JSON.stringify(cleanKT)) {
             const updatedM = { ...m, kelasTarget: cleanKT };
-            set(ref(db, `materials/${m.id}`), cleanForRTDB(updatedM)).catch(() => {});
+            setDoc(doc(db, 'materials', m.id), cleanForFirestore(updatedM)).catch(() => {});
             return updatedM;
           }
           return { ...m, kelasTarget: cleanKT };
         });
         setMaterials(loadedMats);
       },
-      (err) => console.warn('RTDB Materials Listener error:', err)
+      (err) => console.warn('Firestore Materials Listener error:', err)
     );
 
     // 7. Submissions Listener (Preserve local unsent student answers on this device!)
-    const unsubSubmissions = onValue(
-      ref(db, 'submissions'),
+    const unsubSubmissions = onSnapshot(
+      collection(db, 'submissions'),
       (snapshot) => {
-        const val = snapshot.val();
-        if (!val) {
+        if (snapshot.empty) {
           setSubmissions([]);
           return;
         }
-        const rawSubs = toArray<ExamSubmission>(val).map(normalizeSubmission);
+        const rawSubs = snapshot.docs
+          .map((d) => {
+            const data = d.data() as ExamSubmission;
+            return normalizeSubmission({ ...data, id: data.id || d.id });
+          });
         const loadedSubs = rawSubs.map((s) => {
           let cleanSK = sanitizeClassName(s.siswaKelas);
           if (DELETED_CLASSES.includes(cleanSK)) {
@@ -734,7 +788,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
           let processed = s.siswaKelas !== cleanSK ? { ...s, siswaKelas: cleanSK } : s;
           if (s.siswaKelas !== cleanSK) {
-            set(ref(db, `submissions/${s.id}`), cleanForRTDB(processed)).catch(() => {});
+            setDoc(doc(db, 'submissions', s.id), cleanForFirestore(processed)).catch(() => {});
           }
           // Merge device-local draft if student is still working on this device
           if (processed.status === 'sedang_mengerjakan') {
@@ -745,25 +799,28 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         });
         setSubmissions(loadedSubs);
       },
-      (err) => console.warn('RTDB Submissions Listener error:', err)
+      (err) => console.warn('Firestore Submissions Listener error:', err)
     );
 
     // 8. Attendance (Absensi Siswa) Listener
-    const unsubAttendance = onValue(
-      ref(db, 'absensi'),
+    const unsubAttendance = onSnapshot(
+      collection(db, 'absensi'),
       (snapshot) => {
-        const val = snapshot.val();
-        if (!val) {
+        if (snapshot.empty) {
           setAttendanceList([]);
           return;
         }
-        const loadedAttendance = toArray<AttendanceRecord>(val).map((a) => ({
-          ...a,
-          records: a.records || {},
-        }));
+        const loadedAttendance: AttendanceRecord[] = snapshot.docs.map((d) => {
+          const data = d.data() as AttendanceRecord;
+          return {
+            ...data,
+            id: data.id || d.id,
+            records: data.records || {},
+          };
+        });
         setAttendanceList(loadedAttendance);
       },
-      (err) => console.warn('RTDB Absensi Listener error:', err)
+      (err) => console.warn('Firestore Absensi Listener error:', err)
     );
 
     return () => {
@@ -807,14 +864,16 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     let foundUser = users.find(matchUser);
 
-    // Direct RTDB fetch fallback for fresh browser/cross-device login before initial sync completes
+    // Direct Firestore fetch fallback for fresh browser/cross-device login before initial sync completes
     if (!foundUser) {
       try {
-        const usersSnap = await get(ref(db, 'users'));
-        if (usersSnap.exists()) {
-          const rawVal = usersSnap.val() as Record<string, User>;
-          const freshUsers: User[] = Object.entries(rawVal)
-            .map(([id, data]) => normalizeUser({ ...data, id: data.id || id }))
+        const usersSnap = await getDocs(collection(db, 'users'));
+        if (!usersSnap.empty) {
+          const freshUsers: User[] = usersSnap.docs
+            .map((d) => {
+              const data = d.data() as User;
+              return normalizeUser({ ...data, id: data.id || d.id });
+            })
             .filter((u) => !isDeletedTeacher(u));
 
           if (freshUsers.length > 0) {
@@ -833,7 +892,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
         }
       } catch (err) {
-        console.warn('Direct RTDB fetch during login fallback error:', err);
+        console.warn('Direct Firestore fetch during login fallback error:', err);
       }
     }
 
@@ -873,8 +932,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
     };
     setUsers((prev) => [newUser, ...prev]);
-    set(ref(db, `users/${newUser.id}`), cleanForRTDB(newUser)).catch((err) =>
-      console.error('Failed to sync newUser to RTDB:', err)
+    setDoc(doc(db, 'users', newUser.id), cleanForFirestore(newUser)).catch((err) =>
+      console.error('Failed to sync newUser to Firestore:', err)
     );
   };
 
@@ -883,8 +942,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (currentUser?.id === updated.id) {
       setCurrentUser(updated);
     }
-    set(ref(db, `users/${updated.id}`), cleanForRTDB(updated)).catch((err) =>
-      console.error('Failed to update user in RTDB:', err)
+    setDoc(doc(db, 'users', updated.id), cleanForFirestore(updated)).catch((err) =>
+      console.error('Failed to update user in Firestore:', err)
     );
   };
 
@@ -893,8 +952,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (target?.username === 'darma313adi') return;
 
     setUsers((prev) => prev.filter((u) => u.id !== userId));
-    remove(ref(db, `users/${userId}`)).catch((err) =>
-      console.error('Failed to delete user in RTDB:', err)
+    deleteDoc(doc(db, 'users', userId)).catch((err) =>
+      console.error('Failed to delete user in Firestore:', err)
     );
 
     if (target?.role === 'guru') {
@@ -902,7 +961,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         prev.map((r) => {
           if (r.waliKelasId === userId) {
             const updatedR = { ...r, waliKelasId: undefined, waliKelasNama: undefined };
-            set(ref(db, `rombels/${r.id}`), cleanForRTDB(updatedR)).catch(() => {});
+            setDoc(doc(db, 'rombels', r.id), cleanForFirestore(updatedR)).catch(() => {});
             return updatedR;
           }
           return r;
@@ -912,7 +971,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         prev.map((kmp) => {
           if (kmp.guruId === userId) {
             const updatedK = { ...kmp, guruId: undefined, guruNama: undefined };
-            set(ref(db, `kelasMapelPengampu/${kmp.id}`), cleanForRTDB(updatedK)).catch(() => {});
+            setDoc(doc(db, 'kelasMapelPengampu', kmp.id), cleanForFirestore(updatedK)).catch(() => {});
             return updatedK;
           }
           return kmp;
@@ -930,14 +989,14 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setUsers((prev) => prev.filter((u) => !validIds.includes(u.id)));
     validIds.forEach((id) => {
-      remove(ref(db, `users/${id}`)).catch(() => {});
+      deleteDoc(doc(db, 'users', id)).catch(() => {});
     });
 
     setRombelList((prev) =>
       prev.map((r) => {
         if (r.waliKelasId && validIds.includes(r.waliKelasId)) {
           const updatedR = { ...r, waliKelasId: undefined, waliKelasNama: undefined };
-          set(ref(db, `rombels/${r.id}`), cleanForRTDB(updatedR)).catch(() => {});
+          setDoc(doc(db, 'rombels', r.id), cleanForFirestore(updatedR)).catch(() => {});
           return updatedR;
         }
         return r;
@@ -947,7 +1006,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       prev.map((kmp) => {
         if (kmp.guruId && validIds.includes(kmp.guruId)) {
           const updatedK = { ...kmp, guruId: undefined, guruNama: undefined };
-          set(ref(db, `kelasMapelPengampu/${kmp.id}`), cleanForRTDB(updatedK)).catch(() => {});
+          setDoc(doc(db, 'kelasMapelPengampu', kmp.id), cleanForFirestore(updatedK)).catch(() => {});
           return updatedK;
         }
         return kmp;
@@ -961,7 +1020,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const nextStatus: 'aktif' | 'nonaktif' = target.status === 'aktif' ? 'nonaktif' : 'aktif';
     const updated = { ...target, status: nextStatus };
     setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
-    set(ref(db, `users/${userId}`), cleanForRTDB(updated)).catch(() => {});
+    setDoc(doc(db, 'users', userId), cleanForFirestore(updated)).catch(() => {});
   };
 
   const resetUserPassword = (userId: string, newPassword?: string): string => {
@@ -970,7 +1029,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (target) {
       const updated = { ...target, password: pass };
       setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
-      set(ref(db, `users/${userId}`), cleanForRTDB(updated)).catch(() => {});
+      setDoc(doc(db, 'users', userId), cleanForFirestore(updated)).catch(() => {});
     }
     return pass;
   };
@@ -1006,7 +1065,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (currentUser?.id === userId) {
       setCurrentUser(updatedUser);
     }
-    set(ref(db, `users/${userId}`), cleanForRTDB(updatedUser)).catch(() => {});
+    setDoc(doc(db, 'users', userId), cleanForFirestore(updatedUser)).catch(() => {});
 
     return { success: true, message: 'Kata sandi berhasil diperbarui!' };
   };
@@ -1019,21 +1078,21 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
     };
     setRombelList((prev) => [...prev, newRombel]);
-    set(ref(db, `rombels/${newRombel.id}`), cleanForRTDB(newRombel)).catch(() => {});
+    setDoc(doc(db, 'rombels', newRombel.id), cleanForFirestore(newRombel)).catch(() => {});
     return newRombel;
   };
 
   const updateRombel = (updated: RombelKelas) => {
     const oldRombel = rombelList.find((r) => r.id === updated.id);
     setRombelList((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
-    set(ref(db, `rombels/${updated.id}`), cleanForRTDB(updated)).catch(() => {});
+    setDoc(doc(db, 'rombels', updated.id), cleanForFirestore(updated)).catch(() => {});
 
     if (oldRombel && oldRombel.nama !== updated.nama) {
       setKelasMapelPengampuList((prev) =>
         prev.map((kmp) => {
           if (kmp.kelasNama === oldRombel.nama) {
             const updatedKmp = { ...kmp, kelasNama: updated.nama };
-            set(ref(db, `kelasMapelPengampu/${kmp.id}`), cleanForRTDB(updatedKmp)).catch(() => {});
+            setDoc(doc(db, 'kelasMapelPengampu', kmp.id), cleanForFirestore(updatedKmp)).catch(() => {});
             return updatedKmp;
           }
           return kmp;
@@ -1043,7 +1102,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         prev.map((u) => {
           if (u.kelas === oldRombel.nama) {
             const updatedU = { ...u, kelas: updated.nama };
-            set(ref(db, `users/${u.id}`), cleanForRTDB(updatedU)).catch(() => {});
+            setDoc(doc(db, 'users', u.id), cleanForFirestore(updatedU)).catch(() => {});
             return updatedU;
           }
           return u;
@@ -1055,20 +1114,20 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const deleteRombel = (rombelId: string) => {
     const target = rombelList.find((r) => r.id === rombelId);
     setRombelList((prev) => prev.filter((r) => r.id !== rombelId));
-    remove(ref(db, `rombels/${rombelId}`)).catch(() => {});
+    deleteDoc(doc(db, 'rombels', rombelId)).catch(() => {});
 
     if (target) {
       setKelasMapelPengampuList((prev) => {
         const remaining = prev.filter((kmp) => kmp.kelasNama !== target.nama);
         const removed = prev.filter((kmp) => kmp.kelasNama === target.nama);
-        removed.forEach((k) => remove(ref(db, `kelasMapelPengampu/${k.id}`)).catch(() => {}));
+        removed.forEach((k) => deleteDoc(doc(db, 'kelasMapelPengampu', k.id)).catch(() => {}));
         return remaining;
       });
       setUsers((prev) =>
         prev.map((u) => {
           if (u.kelas === target.nama) {
             const updatedU = { ...u, kelas: undefined };
-            set(ref(db, `users/${u.id}`), cleanForRTDB(updatedU)).catch(() => {});
+            setDoc(doc(db, 'users', u.id), cleanForFirestore(updatedU)).catch(() => {});
             return updatedU;
           }
           return u;
@@ -1085,20 +1144,20 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
     };
     setMataPelajaranList((prev) => [...prev, newMapel]);
-    set(ref(db, `mataPelajaran/${newMapel.id}`), cleanForRTDB(newMapel)).catch(() => {});
+    setDoc(doc(db, 'mataPelajaran', newMapel.id), cleanForFirestore(newMapel)).catch(() => {});
     return newMapel;
   };
 
   const updateMataPelajaran = (updated: MataPelajaran) => {
     const oldMapel = mataPelajaranList.find((m) => m.id === updated.id);
     setMataPelajaranList((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
-    set(ref(db, `mataPelajaran/${updated.id}`), cleanForRTDB(updated)).catch(() => {});
+    setDoc(doc(db, 'mataPelajaran', updated.id), cleanForFirestore(updated)).catch(() => {});
 
     setKelasMapelPengampuList((prev) =>
       prev.map((kmp) => {
         if (kmp.mapelId === updated.id) {
           const updatedKmp = { ...kmp, mapelNama: updated.nama, mapelKode: updated.kode };
-          set(ref(db, `kelasMapelPengampu/${kmp.id}`), cleanForRTDB(updatedKmp)).catch(() => {});
+          setDoc(doc(db, 'kelasMapelPengampu', kmp.id), cleanForFirestore(updatedKmp)).catch(() => {});
           return updatedKmp;
         }
         return kmp;
@@ -1110,7 +1169,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         prev.map((e) => {
           if (e.mataPelajaran === oldMapel.nama) {
             const updatedE = { ...e, mataPelajaran: updated.nama };
-            set(ref(db, `exams/${e.id}`), cleanForRTDB(updatedE)).catch(() => {});
+            setDoc(doc(db, 'exams', e.id), cleanForFirestore(updatedE)).catch(() => {});
             return updatedE;
           }
           return e;
@@ -1121,11 +1180,11 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const deleteMataPelajaran = (mapelId: string) => {
     setMataPelajaranList((prev) => prev.filter((m) => m.id !== mapelId));
-    remove(ref(db, `mataPelajaran/${mapelId}`)).catch(() => {});
+    deleteDoc(doc(db, 'mataPelajaran', mapelId)).catch(() => {});
     setKelasMapelPengampuList((prev) => {
       const remaining = prev.filter((kmp) => kmp.mapelId !== mapelId);
       const removed = prev.filter((kmp) => kmp.mapelId === mapelId);
-      removed.forEach((k) => remove(ref(db, `kelasMapelPengampu/${k.id}`)).catch(() => {}));
+      removed.forEach((k) => deleteDoc(doc(db, 'kelasMapelPengampu', k.id)).catch(() => {}));
       return remaining;
     });
   };
@@ -1141,7 +1200,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const toDelete = prev.filter(
         (kmp) => kmp.kelasNama === kelasNama && !mapelIds.includes(kmp.mapelId)
       );
-      toDelete.forEach((k) => remove(ref(db, `kelasMapelPengampu/${k.id}`)).catch(() => {}));
+      toDelete.forEach((k) => deleteDoc(doc(db, 'kelasMapelPengampu', k.id)).catch(() => {}));
 
       const newlyAdded: KelasMapelPengampu[] = [];
       mapelIds.forEach((mId) => {
@@ -1157,7 +1216,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               mapelKode: mapelObj.kode,
             };
             newlyAdded.push(newItem);
-            set(ref(db, `kelasMapelPengampu/${newItem.id}`), cleanForRTDB(newItem)).catch(() => {});
+            setDoc(doc(db, 'kelasMapelPengampu', newItem.id), cleanForFirestore(newItem)).catch(() => {});
           }
         }
       });
@@ -1180,7 +1239,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             guruId: guruId || undefined,
             guruNama: guruNama || undefined,
           };
-          set(ref(db, `kelasMapelPengampu/${kmp.id}`), cleanForRTDB(updated)).catch(() => {});
+          setDoc(doc(db, 'kelasMapelPengampu', kmp.id), cleanForFirestore(updated)).catch(() => {});
           return updated;
         }
         return kmp;
@@ -1208,7 +1267,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               kelasAjar: updatedKelasAjar,
               mataPelajaran: updatedMapel,
             };
-            set(ref(db, `users/${u.id}`), cleanForRTDB(updatedGuru)).catch(() => {});
+            setDoc(doc(db, 'users', u.id), cleanForFirestore(updatedGuru)).catch(() => {});
             return updatedGuru;
           }
           return u;
@@ -1221,7 +1280,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setKelasMapelPengampuList((prev) => {
       const target = prev.find((kmp) => kmp.kelasNama === kelasNama && kmp.mapelId === mapelId);
       if (target) {
-        remove(ref(db, `kelasMapelPengampu/${target.id}`)).catch(() => {});
+        deleteDoc(doc(db, 'kelasMapelPengampu', target.id)).catch(() => {});
       }
       return prev.filter((kmp) => !(kmp.kelasNama === kelasNama && kmp.mapelId === mapelId));
     });
@@ -1261,8 +1320,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return [record, ...prev];
     });
 
-    set(ref(db, `absensi/${record.id}`), cleanForRTDB(record)).catch((err) =>
-      console.error('Failed to save attendance to RTDB:', err)
+    setDoc(doc(db, 'absensi', record.id), cleanForFirestore(record)).catch((err) =>
+      console.error('Failed to save attendance to Firestore:', err)
     );
 
     return record;
@@ -1270,7 +1329,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const deleteAttendance = (attendanceId: string) => {
     setAttendanceList((prev) => prev.filter((a) => a.id !== attendanceId));
-    remove(ref(db, `absensi/${attendanceId}`)).catch(() => {});
+    deleteDoc(doc(db, 'absensi', attendanceId)).catch(() => {});
   };
 
   const importUsers = (newUsers: Partial<User>[]): number => {
@@ -1311,7 +1370,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       newRombelsToCreate.push(newRombel);
       existingRombelNames.add(cleanNama.toLowerCase());
-      set(ref(db, `rombels/${newRombel.id}`), cleanForRTDB(newRombel)).catch(() => {});
+      setDoc(doc(db, 'rombels', newRombel.id), cleanForFirestore(newRombel)).catch(() => {});
     };
 
     newUsers.forEach((nu) => {
@@ -1350,7 +1409,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
 
         updatedUserMap.set(existingUser.id, updated);
-        set(ref(db, `users/${existingUser.id}`), cleanForRTDB(updated)).catch(() => {});
+        setDoc(doc(db, 'users', existingUser.id), cleanForFirestore(updated)).catch(() => {});
         count++;
       } else {
         const newUser: User = {
@@ -1369,7 +1428,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           createdAt: new Date().toISOString(),
         };
         addedList.push(newUser);
-        set(ref(db, `users/${newUser.id}`), cleanForRTDB(newUser)).catch(() => {});
+        setDoc(doc(db, 'users', newUser.id), cleanForFirestore(newUser)).catch(() => {});
         count++;
       }
     });
@@ -1395,7 +1454,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
     };
     setExams((prev) => [newExam, ...prev]);
-    set(ref(db, `exams/${newExam.id}`), cleanForRTDB(newExam)).catch(() => {});
+    setDoc(doc(db, 'exams', newExam.id), cleanForFirestore(newExam)).catch(() => {});
     return newExam;
   };
 
@@ -1404,12 +1463,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (activeExam?.id === updated.id) {
       setActiveExam(updated);
     }
-    set(ref(db, `exams/${updated.id}`), cleanForRTDB(updated)).catch(() => {});
+    setDoc(doc(db, 'exams', updated.id), cleanForFirestore(updated)).catch(() => {});
   };
 
   const deleteExam = (examId: string) => {
     setExams((prev) => prev.filter((e) => e.id !== examId));
-    remove(ref(db, `exams/${examId}`)).catch(() => {});
+    deleteDoc(doc(db, 'exams', examId)).catch(() => {});
   };
 
   const addQuestionsToExam = (examId: string, questions: QuestionItem[]) => {
@@ -1425,7 +1484,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             ...e,
             soalList: [...e.soalList, ...renumbered],
           };
-          set(ref(db, `exams/${examId}`), cleanForRTDB(updatedExam)).catch(() => {});
+          setDoc(doc(db, 'exams', examId), cleanForFirestore(updatedExam)).catch(() => {});
           return updatedExam;
         }
         return e;
@@ -1440,13 +1499,13 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
     };
     setMaterials((prev) => [newMaterial, ...prev]);
-    set(ref(db, `materials/${newMaterial.id}`), cleanForRTDB(newMaterial)).catch(() => {});
+    setDoc(doc(db, 'materials', newMaterial.id), cleanForFirestore(newMaterial)).catch(() => {});
     return newMaterial;
   };
 
   const deleteMaterial = (materialId: string) => {
     setMaterials((prev) => prev.filter((m) => m.id !== materialId));
-    remove(ref(db, `materials/${materialId}`)).catch(() => {});
+    deleteDoc(doc(db, 'materials', materialId)).catch(() => {});
   };
 
   const startExamSession = (exam: Exam, siswa: User): ExamSubmission => {
@@ -1526,7 +1585,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       newSub,
       ...prev.filter((s) => !(s.examId === exam.id && s.siswaId === siswa.id)),
     ]);
-    set(ref(db, `submissions/${newSub.id}`), cleanForRTDB(newSub)).catch(() => {});
+    setDoc(doc(db, 'submissions', newSub.id), cleanForFirestore(newSub)).catch(() => {});
     return newSub;
   };
 
@@ -1624,7 +1683,11 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updatedAt: new Date().toISOString(),
       });
 
-      set(ref(db, `submissions/${prev.id}/violations`), cleanForRTDB(updatedViolations)).catch(() => {});
+      setDoc(
+        doc(db, 'submissions', prev.id),
+        { violations: cleanForFirestore(updatedViolations) },
+        { merge: true }
+      ).catch(() => {});
       setSubmissions((subs) =>
         subs.map((s) => (s.id === updatedSubmission.id ? updatedSubmission : s))
       );
@@ -1658,8 +1721,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setActiveSubmission(completed);
     setSubmissions((subs) => subs.map((s) => (s.id === completed.id ? completed : s)));
 
-    set(ref(db, `submissions/${completed.id}`), cleanForRTDB(completed)).catch((err) =>
-      console.error('Failed to save submission to RTDB:', err)
+    setDoc(doc(db, 'submissions', completed.id), cleanForFirestore(completed)).catch((err) =>
+      console.error('Failed to save submission to Firestore:', err)
     );
 
     return completed;
@@ -1685,7 +1748,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             nilai100,
             catatanGuru: catatanGuru !== undefined ? catatanGuru : s.catatanGuru,
           };
-          set(ref(db, `submissions/${submissionId}`), cleanForRTDB(updated)).catch(() => {});
+          setDoc(doc(db, 'submissions', submissionId), cleanForFirestore(updated)).catch(() => {});
           return updated;
         }
         return s;
@@ -1702,8 +1765,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (activeSubmission?.id === submissionId) {
       setActiveSubmission(null);
     }
-    remove(ref(db, `submissions/${submissionId}`)).catch((err) =>
-      console.error('Failed to reset submission in RTDB:', err)
+    deleteDoc(doc(db, 'submissions', submissionId)).catch((err) =>
+      console.error('Failed to reset submission in Firestore:', err)
     );
   };
 
@@ -1721,8 +1784,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setActiveSubmission(null);
     }
     toRemove.forEach((sub) => {
-      remove(ref(db, `submissions/${sub.id}`)).catch((err) =>
-        console.error('Failed to reset participant in RTDB:', err)
+      deleteDoc(doc(db, 'submissions', sub.id)).catch((err) =>
+        console.error('Failed to reset participant in Firestore:', err)
       );
     });
   };
@@ -1746,8 +1809,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setActiveSubmission(null);
     }
     toRemove.forEach((sub) => {
-      remove(ref(db, `submissions/${sub.id}`)).catch((err) =>
-        console.error('Failed to delete class submission from RTDB:', err)
+      deleteDoc(doc(db, 'submissions', sub.id)).catch((err) =>
+        console.error('Failed to delete class submission from Firestore:', err)
       );
     });
   };
@@ -1776,26 +1839,60 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setActiveSubmission(null);
 
     try {
-      const rootReset: Record<string, any> = {
-        users: {},
-        rombels: {},
-        mataPelajaran: {},
-        kelasMapelPengampu: {},
-        exams: {},
-        materials: {},
-        submissions: {},
-        absensi: null,
-      };
-      INITIAL_USERS.forEach((u) => (rootReset.users[u.id] = cleanForRTDB(u)));
-      INITIAL_ROMBEL.forEach((r) => (rootReset.rombels[r.id] = cleanForRTDB(r)));
-      INITIAL_MAPEL.forEach((m) => (rootReset.mataPelajaran[m.id] = cleanForRTDB(m)));
-      INITIAL_KELAS_MAPEL.forEach((kmp) => (rootReset.kelasMapelPengampu[kmp.id] = cleanForRTDB(kmp)));
-      INITIAL_EXAMS.forEach((e) => (rootReset.exams[e.id] = cleanForRTDB(e)));
-      INITIAL_MATERIALS.forEach((m) => (rootReset.materials[m.id] = cleanForRTDB(m)));
-      INITIAL_SUBMISSIONS.forEach((s) => (rootReset.submissions[s.id] = cleanForRTDB(s)));
-      await set(ref(db), rootReset);
+      const collectionsToClear = [
+        'users',
+        'rombels',
+        'mataPelajaran',
+        'kelasMapelPengampu',
+        'exams',
+        'materials',
+        'submissions',
+        'absensi',
+      ];
+      const deleteOps: Array<{ col: string; id: string }> = [];
+      for (const colName of collectionsToClear) {
+        const snap = await getDocs(collection(db, colName));
+        snap.docs.forEach((d) => deleteOps.push({ col: colName, id: d.id }));
+      }
+      for (let i = 0; i < deleteOps.length; i += 450) {
+        const batch = writeBatch(db);
+        deleteOps.slice(i, i + 450).forEach((op) => {
+          batch.delete(doc(db, op.col, op.id));
+        });
+        await batch.commit();
+      }
+
+      const seedOps: Array<{ col: string; id: string; data: any }> = [];
+      INITIAL_USERS.forEach((u) =>
+        seedOps.push({ col: 'users', id: u.id, data: cleanForFirestore(u) })
+      );
+      INITIAL_ROMBEL.forEach((r) =>
+        seedOps.push({ col: 'rombels', id: r.id, data: cleanForFirestore(r) })
+      );
+      INITIAL_MAPEL.forEach((m) =>
+        seedOps.push({ col: 'mataPelajaran', id: m.id, data: cleanForFirestore(m) })
+      );
+      INITIAL_KELAS_MAPEL.forEach((kmp) =>
+        seedOps.push({ col: 'kelasMapelPengampu', id: kmp.id, data: cleanForFirestore(kmp) })
+      );
+      INITIAL_EXAMS.forEach((e) =>
+        seedOps.push({ col: 'exams', id: e.id, data: cleanForFirestore(e) })
+      );
+      INITIAL_MATERIALS.forEach((m) =>
+        seedOps.push({ col: 'materials', id: m.id, data: cleanForFirestore(m) })
+      );
+      INITIAL_SUBMISSIONS.forEach((s) =>
+        seedOps.push({ col: 'submissions', id: s.id, data: cleanForFirestore(s) })
+      );
+      for (let i = 0; i < seedOps.length; i += 450) {
+        const batch = writeBatch(db);
+        seedOps.slice(i, i + 450).forEach((op) => {
+          batch.set(doc(db, op.col, op.id), op.data);
+        });
+        await batch.commit();
+      }
     } catch (err) {
-      console.warn('Reset RTDB error:', err);
+      console.warn('Reset Firestore error:', err);
     }
   };
 
