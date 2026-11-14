@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { useLMS } from '../../context/LMSContext';
+import { useLMS, isDeletedClass } from '../../context/LMSContext';
 import {
   Exam,
   QuestionItem,
@@ -77,7 +77,7 @@ import { QuestionImageEditorModal } from './QuestionImageEditorModal';
 import { ExamViewModal } from '../common/ExamViewModal';
 import { MaterialViewModal } from '../common/MaterialViewModal';
 
-const DELETED_CLASSES_FILTER = ['Semua Kelas'];
+const DELETED_CLASSES_FILTER = ['Semua Kelas', 'X 3', 'XI 3', 'XII 3', 'XII 4'];
 
 function sortKelasNatural(list: string[]): string[] {
   const rank = (c: string) => {
@@ -278,7 +278,12 @@ export const GuruDashboard: React.FC = () => {
       return sortKelasNatural(
         rombelList
           .map((r) => r.nama.trim())
-          .filter((k) => k && !DELETED_CLASSES_FILTER.some((d) => d.toLowerCase() === k.toLowerCase()))
+          .filter(
+            (k) =>
+              k &&
+              !isDeletedClass(k) &&
+              !DELETED_CLASSES_FILTER.some((d) => d.toLowerCase() === k.toLowerCase())
+          )
       );
     }
 
@@ -304,6 +309,7 @@ export const GuruDashboard: React.FC = () => {
             .filter(
               (k) =>
                 Boolean(k) &&
+                !isDeletedClass(k) &&
                 !DELETED_CLASSES_FILTER.some((d) => d.toLowerCase() === k.toLowerCase())
             )
         )
@@ -1266,23 +1272,23 @@ export const GuruDashboard: React.FC = () => {
             </div>
           )}
 
-          {/* RINGKASAN VISUAL STATISTIK & TINGKAT KEHADIRAN SISWA (Requirement #5) */}
-          <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-200 gap-2 mb-5">
+          {/* RINGKASAN VISUAL STATISTIK & TINGKAT KEHADIRAN SISWA (Compact & Efisien) */}
+          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-slate-200 gap-2 mb-3.5">
               <div>
                 <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-blue-50 text-blue-700 rounded-lg">
-                    <BarChart3 className="w-5 h-5" />
+                  <div className="p-1 bg-blue-50 text-blue-700 rounded-lg">
+                    <BarChart3 className="w-4 h-4" />
                   </div>
-                  <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                  <h3 className="text-base font-black text-slate-900 tracking-tight">
                     Ringkasan Visual Statistik & Tingkat Kehadiran Siswa
                   </h3>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-[11px] text-slate-500 mt-0.5">
                   Statistik nilai rata-rata kelas dan tingkat kehadiran/partisipasi siswa untuk mata pelajaran <strong>{currentUser?.mataPelajaran || 'Sains Terpadu'}</strong>.
                 </p>
               </div>
-              <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 self-start sm:self-auto">
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 self-start sm:self-auto shrink-0">
                 Rata-rata Gabungan: {
                   classVisualStats.filter((c) => c.avgScore !== null).length > 0
                     ? Math.round(
@@ -1294,24 +1300,24 @@ export const GuruDashboard: React.FC = () => {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
               {classVisualStats.map((st) => (
                 <div
                   key={st.namaKelas}
-                  className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:shadow-md transition flex flex-col justify-between"
+                  className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-white hover:shadow-sm transition flex flex-col justify-between gap-2"
                 >
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="font-extrabold text-sm text-slate-900">{st.namaKelas}</span>
-                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="font-extrabold text-xs text-slate-900 truncate">{st.namaKelas}</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 shrink-0">
                         {st.totalSiswa} Siswa
                       </span>
                     </div>
 
                     {/* Bar 1: Nilai Rata-rata */}
-                    <div className="mb-3">
-                      <div className="flex justify-between items-center text-xs mb-1">
-                        <span className="text-slate-500 font-semibold text-[11px]">Nilai Rata-Rata:</span>
+                    <div>
+                      <div className="flex justify-between items-center text-[10px] mb-1">
+                        <span className="text-slate-500 font-semibold">Rata-Rata:</span>
                         <span
                           className={`font-mono font-bold ${
                             st.avgScore === null
@@ -1323,10 +1329,10 @@ export const GuruDashboard: React.FC = () => {
                               : 'text-rose-700'
                           }`}
                         >
-                          {st.avgScore !== null ? `${st.avgScore} / 100` : 'Belum Ada Nilai'}
+                          {st.avgScore !== null ? `${st.avgScore}/100` : 'Belum ada'}
                         </span>
                       </div>
-                      <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                      <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all duration-500 ${
                             (st.avgScore || 0) >= 75
@@ -1341,14 +1347,14 @@ export const GuruDashboard: React.FC = () => {
                     </div>
 
                     {/* Bar 2: Tingkat Kehadiran / Partisipasi */}
-                    <div className="mb-3">
-                      <div className="flex justify-between items-center text-xs mb-1">
-                        <span className="text-slate-500 font-semibold text-[11px]">Tingkat Kehadiran Siswa:</span>
+                    <div>
+                      <div className="flex justify-between items-center text-[10px] mb-1">
+                        <span className="text-slate-500 font-semibold">Kehadiran:</span>
                         <span className="font-mono font-bold text-blue-700">
-                          {st.attendancePercent}% ({st.attendedCount} / {st.totalSiswa})
+                          {st.attendancePercent}% ({st.attendedCount}/{st.totalSiswa})
                         </span>
                       </div>
-                      <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                      <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-blue-500 rounded-full transition-all duration-500"
                           style={{ width: `${st.attendancePercent}%` }}
@@ -1357,10 +1363,10 @@ export const GuruDashboard: React.FC = () => {
                     </div>
 
                     {/* Ketuntasan */}
-                    <div className="flex items-center justify-between text-[11px] p-2 rounded-xl bg-white border border-slate-200 text-slate-600 mb-3">
-                      <span>Ketuntasan (KKM {activeExam?.kkm || 75}):</span>
+                    <div className="flex items-center justify-between text-[10px] px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-600">
+                      <span>Tuntas (KKM {activeExam?.kkm || 75}):</span>
                       <span className={`font-bold ${st.tuntasPercent >= 75 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                        {st.tuntasCount} Siswa ({st.tuntasPercent}%)
+                        {st.tuntasCount} ({st.tuntasPercent}%)
                       </span>
                     </div>
                   </div>
@@ -1388,40 +1394,40 @@ export const GuruDashboard: React.FC = () => {
                         kamadNip: kamad?.nip,
                       });
                     }}
-                    className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                    className="w-full py-1.5 px-2.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 text-[11px] font-bold flex items-center justify-center gap-1 transition cursor-pointer shadow-2xs"
                   >
-                    <FileText className="w-3.5 h-3.5 text-red-600" />
-                    <span>Unduh Laporan Nilai PDF</span>
+                    <FileText className="w-3 h-3 text-red-600" />
+                    <span>Unduh Laporan PDF</span>
                   </button>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* SECTION: DAFTAR KELAS YANG DIAJAR */}
-          <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-5 border-b border-slate-200 gap-2 mb-6">
+          {/* SECTION: DAFTAR KELAS YANG DIAJAR (Compact & Efisien) */}
+          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-slate-200 gap-2 mb-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-indigo-50 text-indigo-700 rounded-lg">
-                    <School className="w-5 h-5" />
+                  <div className="p-1 bg-indigo-50 text-indigo-700 rounded-lg">
+                    <School className="w-4 h-4" />
                   </div>
-                  <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                  <h3 className="text-base font-black text-slate-900 tracking-tight">
                     Daftar Kelas yang Diajar
                   </h3>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Berikut adalah rombel kelas yang Anda ampu untuk mata pelajaran <strong>{currentUser?.mataPelajaran || 'Sains'}</strong> di MAN 11 Jakarta.
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Rombel kelas yang Anda ampu untuk mata pelajaran <strong>{currentUser?.mataPelajaran || 'Sains'}</strong> di MAN 11 Jakarta.
                 </p>
               </div>
 
-              <span className="text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-700 self-start sm:self-auto">
+              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 self-start sm:self-auto shrink-0">
                 {kelasDiajarList.length} Rombel Kelas
               </span>
             </div>
 
-            {/* Grid Kartu Kelas */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {/* Grid Kartu Kelas Compact */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
               {kelasDiajarList.map((namaKelas) => {
                 const siswaInClass = users.filter(
                   (u) => u.role === 'siswa' && u.kelas?.trim().toLowerCase() === namaKelas.trim().toLowerCase()
@@ -1447,72 +1453,57 @@ export const GuruDashboard: React.FC = () => {
                 return (
                   <div
                     key={namaKelas}
-                    className="group bg-gradient-to-b from-slate-50/60 to-white rounded-2xl border border-slate-200/90 hover:border-indigo-300 hover:shadow-lg transition duration-200 overflow-hidden flex flex-col justify-between"
+                    className="group bg-gradient-to-b from-slate-50/60 to-white rounded-xl border border-slate-200/90 hover:border-indigo-300 hover:shadow-md transition duration-200 overflow-hidden flex flex-col justify-between"
                   >
-                    <div className="p-5">
-                      {/* Class Badge & Title */}
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div>
-                          <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200/60 mb-1.5">
-                            MAN 11 JAKARTA
-                          </span>
-                          <h4 className="text-xl font-black text-slate-900 group-hover:text-indigo-700 transition">
+                    <div className="p-3">
+                      {/* Class Title & Icon */}
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="min-w-0">
+                          <h4 className="text-base font-black text-slate-900 group-hover:text-indigo-700 transition leading-tight truncate">
                             {namaKelas}
                           </h4>
-                          <p className="text-xs text-slate-500">
-                            Mapel: {currentUser?.mataPelajaran || 'Sains & Kejuruan'}
+                          <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                            {currentUser?.mataPelajaran || 'Mata Pelajaran'}
                           </p>
                         </div>
-                        <div className="w-10 h-10 rounded-xl bg-indigo-100/70 text-indigo-700 flex items-center justify-center font-bold">
-                          <GraduationCap className="w-5 h-5" />
+                        <div className="w-7 h-7 rounded-lg bg-indigo-100/70 text-indigo-700 flex items-center justify-center shrink-0">
+                          <GraduationCap className="w-3.5 h-3.5" />
                         </div>
                       </div>
 
-                      {/* Detail Metrics per Kelas */}
-                      <div className="grid grid-cols-2 gap-2 my-4 p-3 bg-white rounded-xl border border-slate-200/70 text-xs">
-                        <div>
-                          <p className="text-[10px] uppercase font-bold text-slate-400">Total Siswa</p>
-                          <p className="font-bold text-slate-800 text-sm flex items-center gap-1 mt-0.5">
-                            <Users className="w-3.5 h-3.5 text-blue-600" />
-                            <span>{siswaInClass.length} Peserta</span>
-                          </p>
+                      {/* Compact 2x2 Metrics */}
+                      <div className="grid grid-cols-2 gap-1.5 p-2 bg-white rounded-lg border border-slate-200/70 text-[11px]">
+                        <div className="flex items-center gap-1 text-slate-700 font-semibold truncate">
+                          <Users className="w-3 h-3 text-blue-600 shrink-0" />
+                          <span className="truncate">{siswaInClass.length} Siswa</span>
                         </div>
-                        <div>
-                          <p className="text-[10px] uppercase font-bold text-slate-400">Asesmen CBT</p>
-                          <p className="font-bold text-slate-800 text-sm flex items-center gap-1 mt-0.5">
-                            <BookOpen className="w-3.5 h-3.5 text-violet-600" />
-                            <span>{examsForClass.length} Ujian</span>
-                          </p>
+                        <div className="flex items-center gap-1 text-slate-700 font-semibold truncate">
+                          <BookOpen className="w-3 h-3 text-violet-600 shrink-0" />
+                          <span className="truncate">{examsForClass.length} Ujian</span>
                         </div>
-                        <div className="pt-2 border-t border-slate-100">
-                          <p className="text-[10px] uppercase font-bold text-slate-400">Materi PDF</p>
-                          <p className="font-bold text-slate-800 text-sm flex items-center gap-1 mt-0.5">
-                            <FileText className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>{materialsForClass.length} Dokumen</span>
-                          </p>
+                        <div className="flex items-center gap-1 text-slate-700 font-semibold truncate pt-1 border-t border-slate-100">
+                          <FileText className="w-3 h-3 text-emerald-600 shrink-0" />
+                          <span className="truncate">{materialsForClass.length} PDF</span>
                         </div>
-                        <div className="pt-2 border-t border-slate-100">
-                          <p className="text-[10px] uppercase font-bold text-slate-400">Rata-rata Nilai</p>
-                          <p className="font-bold text-slate-800 text-sm flex items-center gap-1 mt-0.5">
-                            <Award className="w-3.5 h-3.5 text-amber-500" />
-                            <span>{avgScore !== null ? `${avgScore} / 100` : '-'}</span>
-                          </p>
+                        <div className="flex items-center gap-1 text-slate-700 font-semibold truncate pt-1 border-t border-slate-100">
+                          <Award className="w-3 h-3 text-amber-500 shrink-0" />
+                          <span className="truncate">{avgScore !== null ? `${avgScore}/100` : '-'}</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Card Actions */}
-                    <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col gap-2">
+                    {/* Compact Card Actions */}
+                    <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex flex-col gap-1.5">
                       <button
                         type="button"
                         onClick={() => setSelectedClassForRoster(namaKelas)}
-                        className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                        className="w-full py-1.5 px-2.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 text-[11px] font-bold flex items-center justify-center gap-1 transition cursor-pointer shadow-2xs"
                       >
-                        <Users className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>Lihat Roster Siswa ({siswaInClass.length})</span>
+                        <Users className="w-3 h-3 text-indigo-600" />
+                        <span>Roster Siswa ({siswaInClass.length})</span>
                       </button>
 
-                      <div className="grid grid-cols-3 gap-1.5">
+                      <div className="grid grid-cols-3 gap-1">
                         <button
                           type="button"
                           onClick={() => {
@@ -1527,9 +1518,10 @@ export const GuruDashboard: React.FC = () => {
                             }));
                             setShowCreateExamModal(true);
                           }}
-                          className="py-1.5 px-2 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold text-center transition cursor-pointer"
+                          className="py-1 px-1.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold text-center transition cursor-pointer truncate"
+                          title="Buat Ujian / Tugas"
                         >
-                          + Ujian/Tugas
+                          + Ujian
                         </button>
                         <button
                           type="button"
@@ -1537,9 +1529,10 @@ export const GuruDashboard: React.FC = () => {
                             setAbsensiKelas(namaKelas);
                             setActiveTab('absensi');
                           }}
-                          className="py-1.5 px-2 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 text-[11px] font-bold text-center transition cursor-pointer"
+                          className="py-1 px-1.5 rounded-md bg-teal-50 hover:bg-teal-100 text-teal-700 text-[10px] font-bold text-center transition cursor-pointer truncate"
+                          title="Isi Absensi Kelas"
                         >
-                          Isi Absensi
+                          Absensi
                         </button>
                         <button
                           type="button"
@@ -1552,9 +1545,10 @@ export const GuruDashboard: React.FC = () => {
                             }));
                             setActiveTab('materi');
                           }}
-                          className="py-1.5 px-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-bold text-center transition cursor-pointer"
+                          className="py-1 px-1.5 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold text-center transition cursor-pointer truncate"
+                          title="Kirim Materi PDF"
                         >
-                          + Kirim PDF
+                          + PDF
                         </button>
                       </div>
                     </div>

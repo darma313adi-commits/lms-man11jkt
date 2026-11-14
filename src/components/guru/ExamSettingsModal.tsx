@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Exam, ExamToken } from '../../types';
-import { useLMS } from '../../context/LMSContext';
+import { useLMS, isDeletedClass } from '../../context/LMSContext';
 import {
   X,
   Settings,
@@ -26,14 +26,10 @@ interface ExamSettingsModalProps {
 }
 
 export const ALL_CLASSES_LIST = [
-  'X 3',
   'X 4',
   'XI 1',
   'XI 2',
-  'XI 3',
   'XI 4',
-  'XII 3',
-  'XII 4',
   'Semua Kelas',
 ];
 
@@ -89,14 +85,20 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
       .map((r) => r.nama);
     return sortClassesNatural(
       Array.from(
-        new Set([...fromProfile, ...fromPlotting, ...fromWali].map((k) => k.trim()).filter(Boolean))
+        new Set(
+          [...fromProfile, ...fromPlotting, ...fromWali]
+            .map((k) => k.trim())
+            .filter((k) => Boolean(k) && !isDeletedClass(k))
+        )
       )
     );
   }, [isTeacher, currentUser, kelasMapelPengampuList, rombelList]);
 
   const allSchoolClasses = useMemo(() => {
-    const fromRombels = rombelList.map((r) => r.nama.trim()).filter(Boolean);
-    const fallback = ALL_CLASSES_LIST.filter((c) => c !== 'Semua Kelas');
+    const fromRombels = rombelList
+      .map((r) => r.nama.trim())
+      .filter((k) => Boolean(k) && !isDeletedClass(k));
+    const fallback = ALL_CLASSES_LIST.filter((c) => c !== 'Semua Kelas' && !isDeletedClass(c));
     const merged = Array.from(new Set(fromRombels.length > 0 ? fromRombels : fallback));
     return sortClassesNatural(merged);
   }, [rombelList]);
@@ -114,7 +116,7 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
   }, [isTeacher, currentUser, showAllRombels, taughtClasses, allSchoolClasses]);
 
   const [status, setStatus] = useState<'draft' | 'aktif' | 'selesai'>('aktif');
-  const [selectedClasses, setSelectedClasses] = useState<string[]>(['XII 3']);
+  const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
   const [targetMode, setTargetMode] = useState<'class' | 'students'>('class');
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [studentSearch, setStudentSearch] = useState<string>('');
@@ -156,7 +158,7 @@ export const ExamSettingsModal: React.FC<ExamSettingsModalProps> = ({
     } else if (availablePool.length > 0) {
       setSelectedClasses([availablePool[0]]);
     } else {
-      setSelectedClasses(['XII 3', 'XII 4']);
+      setSelectedClasses([]);
     }
 
     if (exam.targetSiswaIds && exam.targetSiswaIds.length > 0) {

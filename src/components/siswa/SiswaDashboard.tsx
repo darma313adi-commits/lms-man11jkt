@@ -36,7 +36,7 @@ export const SiswaDashboard: React.FC = () => {
   if (!currentUser) return null;
 
   // Filter exams targetting this student's class AND optional specific student selection (targetSiswaIds)
-  const studentClass = currentUser.kelas || 'XII 3';
+  const studentClass = currentUser.kelas || 'XI 1';
   const availableExams = exams.filter((ex) => {
     if (ex.targetSiswaIds && ex.targetSiswaIds.length > 0) {
       return ex.targetSiswaIds.includes(currentUser.id);

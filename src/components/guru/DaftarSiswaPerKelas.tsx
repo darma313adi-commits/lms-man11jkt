@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useLMS } from '../../context/LMSContext';
+import { useLMS, isDeletedClass } from '../../context/LMSContext';
 import { User, ExamSubmission } from '../../types';
 import {
   Users,
@@ -38,7 +38,11 @@ export const DaftarSiswaPerKelas: React.FC<{ initialClass?: string | null }> = (
       .map((k) => k.kelasNama);
 
     return Array.from(
-      new Set([...fromProfile, ...fromPlotting].map((k) => k.trim()).filter(Boolean))
+      new Set(
+        [...fromProfile, ...fromPlotting]
+          .map((k) => k.trim())
+          .filter((k) => Boolean(k) && !isDeletedClass(k))
+      )
     ).sort();
   }, [isTeacher, currentUser, kelasMapelPengampuList]);
 
@@ -77,9 +81,9 @@ export const DaftarSiswaPerKelas: React.FC<{ initialClass?: string | null }> = (
       return teacherTaughtClasses;
     }
     const list = Array.from(
-      new Set(allStudents.map((s) => s.kelas?.trim()).filter(Boolean) as string[])
+      new Set(allStudents.map((s) => s.kelas?.trim()).filter((k) => Boolean(k) && !isDeletedClass(k)) as string[])
     ).sort();
-    return list.length > 0 ? list : ['X 3', 'X 4', 'XII 3', 'XII 4'];
+    return list.length > 0 ? list : ['X 4', 'XI 1', 'XI 2', 'XI 4'];
   }, [isTeacher, teacherTaughtClasses, allStudents]);
 
   const [selectedClass, setSelectedClass] = useState<string>(() => {

@@ -201,7 +201,7 @@ export function downloadUserTemplateExcel() {
       'Username': 'dewi_lestari',
       'Password': 'password123',
       'Role': 'siswa',
-      'Kelas': 'XII 3',
+      'Kelas': 'XI 1',
       'NIP / NISN': '0067823414',
       'Email': 'dewi.l@siswa.sch.id',
       'Mata Pelajaran': '',
@@ -211,7 +211,7 @@ export function downloadUserTemplateExcel() {
       'Username': 'rizky_p',
       'Password': 'password123',
       'Role': 'siswa',
-      'Kelas': 'XII 4',
+      'Kelas': 'XI 2',
       'NIP / NISN': '0067823415',
       'Email': 'rizky.p@siswa.sch.id',
       'Mata Pelajaran': '',
@@ -237,7 +237,7 @@ export function downloadGuruTemplateExcel() {
       'NIP': '197604122003122001',
       'Email': 'nurjanah@man11jakarta.sch.id',
       'Mata Pelajaran Diampu': 'Biologi',
-      'Kelas yang Diajar': 'X 3, X 4, XII 3',
+      'Kelas yang Diajar': 'X 4, XI 1, XI 2',
     },
     {
       'Nama Lengkap (dengan Gelar)': 'Ahmad Fauzan, S.Pd, M.Si',
@@ -247,7 +247,7 @@ export function downloadGuruTemplateExcel() {
       'NIP': '198103192008011005',
       'Email': 'ahmad.fauzan@man11jakarta.sch.id',
       'Mata Pelajaran Diampu': 'Fisika',
-      'Kelas yang Diajar': 'XII 3, XII 4',
+      'Kelas yang Diajar': 'XI 1, XI 2',
     },
     {
       'Nama Lengkap (dengan Gelar)': 'Nurul Hidayah, S.Pd',
@@ -257,7 +257,7 @@ export function downloadGuruTemplateExcel() {
       'NIP': '198509212010012008',
       'Email': 'nurul.hidayah@man11jakarta.sch.id',
       'Mata Pelajaran Diampu': 'Kimia',
-      'Kelas yang Diajar': 'XII 3, XII 4',
+      'Kelas yang Diajar': 'X 4, XI 4',
     },
     {
       'Nama Lengkap (dengan Gelar)': 'Rahmat Hidayat, M.Kom',
@@ -267,7 +267,7 @@ export function downloadGuruTemplateExcel() {
       'NIP': '198811052014021003',
       'Email': 'rahmat.h@man11jakarta.sch.id',
       'Mata Pelajaran Diampu': 'Informatika',
-      'Kelas yang Diajar': 'X 3, X 4, XII 3',
+      'Kelas yang Diajar': 'X 4, XI 1, XI 4',
     },
   ];
 

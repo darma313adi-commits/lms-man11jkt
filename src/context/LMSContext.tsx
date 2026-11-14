@@ -213,9 +213,15 @@ function mergeLocalDraftIntoSubmission(
 }
 
 /**
- * Deleted classes filter cleared so all levels (X, XI, XII) remain intact
+ * Deleted classes filter per user instruction (X 3, XI 3, XII 3, XII 4)
  */
-export const DELETED_CLASSES: string[] = [];
+export const DELETED_CLASSES: string[] = ['X 3', 'XI 3', 'XII 3', 'XII 4'];
+
+export function isDeletedClass(className?: string): boolean {
+  if (!className) return false;
+  const clean = className.trim().toLowerCase().replace(/\s+/g, ' ');
+  return DELETED_CLASSES.some((d) => d.toLowerCase() === clean);
+}
 
 /**
  * Deleted teachers per user instruction (Dra. Siti Aminah, M.Pd & Bambang Prakoso, S.Pd)
@@ -336,12 +342,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         .filter((u) => !isDeletedTeacher(u))
         .map((u) => {
           let cleanK = u.kelas ? sanitizeClassName(u.kelas) : undefined;
-          if (cleanK && DELETED_CLASSES.includes(cleanK)) {
-            cleanK = 'XII 3';
+          if (cleanK && isDeletedClass(cleanK)) {
+            cleanK = undefined;
           }
           const cleanKA = u.kelasAjar
             ?.map(sanitizeClassName)
-            .filter((k) => !DELETED_CLASSES.includes(k));
+            .filter((k) => !isDeletedClass(k));
           return {
             ...u,
             kelas: cleanK,
@@ -358,10 +364,9 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const saved = localStorage.getItem(STORAGE_KEY_EXAMS);
       const parsed: Exam[] = saved ? JSON.parse(saved) : INITIAL_EXAMS;
       return parsed.map((e) => {
-        let cleanKT = (e.kelasTarget || [])
+        const cleanKT = (e.kelasTarget || [])
           .map(sanitizeClassName)
-          .filter((k) => !DELETED_CLASSES.includes(k));
-        if (cleanKT.length === 0) cleanKT = ['XII 3', 'XII 4'];
+          .filter((k) => !isDeletedClass(k));
         return {
           ...e,
           kelasTarget: cleanKT,
@@ -378,8 +383,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const parsed: ExamSubmission[] = saved ? JSON.parse(saved) : INITIAL_SUBMISSIONS;
       return parsed.map((s) => {
         let cleanSK = sanitizeClassName(s.siswaKelas);
-        if (DELETED_CLASSES.includes(cleanSK)) {
-          cleanSK = 'XII 3';
+        if (isDeletedClass(cleanSK)) {
+          cleanSK = '-';
         }
         const normalized = normalizeSubmission({ ...s, siswaKelas: cleanSK });
         const draft = loadLocalDraftFromStorage(normalized.examId, normalized.siswaId);
@@ -395,10 +400,9 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const saved = localStorage.getItem(STORAGE_KEY_MATERIALS);
       const parsed: LessonMaterial[] = saved ? JSON.parse(saved) : INITIAL_MATERIALS;
       return parsed.map((m) => {
-        let cleanKT = (m.kelasTarget || [])
+        const cleanKT = (m.kelasTarget || [])
           .map(sanitizeClassName)
-          .filter((k) => !DELETED_CLASSES.includes(k));
-        if (cleanKT.length === 0) cleanKT = ['XII 3', 'XII 4'];
+          .filter((k) => !isDeletedClass(k));
         return {
           ...m,
           kelasTarget: cleanKT,
@@ -419,18 +423,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           nama: sanitizeClassName(r.nama),
           jurusan: r.jurusan === 'MIPA' || r.jurusan === 'IPS' ? 'Umum' : r.jurusan,
         }))
-        .filter((r) => !DELETED_CLASSES.includes(r.nama));
-      // Ensure X, XI, XII exist if legacy storage was missing XI/XII
-      const existingNames = new Set(cleaned.map((r) => r.nama.toLowerCase()));
-      const hasXI = cleaned.some((r) => r.tingkat === 'XI' || /^XI\b/i.test(r.nama));
-      const hasXII = cleaned.some((r) => r.tingkat === 'XII' || /^XII\b/i.test(r.nama));
-      const additions = INITIAL_ROMBEL.filter((ir) => {
-        if (existingNames.has(ir.nama.toLowerCase())) return false;
-        if (!hasXI && ir.tingkat === 'XI') return true;
-        if (!hasXII && ir.tingkat === 'XII') return true;
-        return false;
-      });
-      return [...cleaned, ...additions];
+        .filter((r) => !isDeletedClass(r.nama));
+      return cleaned;
     } catch {
       return INITIAL_ROMBEL;
     }
@@ -454,7 +448,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           ...k,
           kelasNama: sanitizeClassName(k.kelasNama),
         }))
-        .filter((k) => !DELETED_CLASSES.includes(k.kelasNama));
+        .filter((k) => !isDeletedClass(k.kelasNama));
     } catch {
       return INITIAL_KELAS_MAPEL;
     }
@@ -680,14 +674,14 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         const loaded = rawLoaded.map((u) => {
           let cleanK = u.kelas ? sanitizeClassName(u.kelas) : undefined;
-          if (cleanK && DELETED_CLASSES.includes(cleanK)) {
-            cleanK = 'XII 3';
+          if (cleanK && isDeletedClass(cleanK)) {
+            cleanK = undefined;
           }
           const cleanKA = u.kelasAjar
             ?.map(sanitizeClassName)
-            .filter((k) => !DELETED_CLASSES.includes(k));
+            .filter((k) => !isDeletedClass(k));
           if (
-            (u.kelas && u.kelas !== cleanK) ||
+            u.kelas !== cleanK ||
             (u.kelasAjar && JSON.stringify(u.kelasAjar) !== JSON.stringify(cleanKA))
           ) {
             const updatedU = { ...u, kelas: cleanK, kelasAjar: cleanKA };
@@ -725,7 +719,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const loadedRombels: RombelKelas[] = [];
         for (const r of rawRombels) {
           const cleanN = sanitizeClassName(r.nama);
-          if (DELETED_CLASSES.includes(cleanN)) {
+          if (isDeletedClass(cleanN)) {
             deleteDoc(doc(db, 'rombels', r.id)).catch(() => {});
             continue;
           }
@@ -736,19 +730,6 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             loadedRombels.push(updatedR);
           } else {
             loadedRombels.push(r);
-          }
-        }
-        // Auto-restore missing XI or XII rombels if previously stripped
-        const existingNames = new Set(loadedRombels.map((r) => r.nama.trim().toLowerCase()));
-        const hasXI = loadedRombels.some((r) => r.tingkat === 'XI' || /^XI\b/i.test(r.nama));
-        const hasXII = loadedRombels.some((r) => r.tingkat === 'XII' || /^XII\b/i.test(r.nama));
-        for (const ir of INITIAL_ROMBEL) {
-          if (
-            !existingNames.has(ir.nama.trim().toLowerCase()) &&
-            ((!hasXI && ir.tingkat === 'XI') || (!hasXII && ir.tingkat === 'XII'))
-          ) {
-            loadedRombels.push(ir);
-            setDoc(doc(db, 'rombels', ir.id), cleanForFirestore(ir)).catch(() => {});
           }
         }
         setRombelList(loadedRombels);
@@ -784,7 +765,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const loadedKmp: KelasMapelPengampu[] = [];
         for (const k of rawKmp) {
           const cleanKN = sanitizeClassName(k.kelasNama);
-          if (DELETED_CLASSES.includes(cleanKN)) {
+          if (isDeletedClass(cleanKN)) {
             deleteDoc(doc(db, 'kelasMapelPengampu', k.id)).catch(() => {});
             continue;
           }
@@ -812,10 +793,9 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             return normalizeExam({ ...data, id: data.id || d.id });
           });
         const loadedExams = rawExams.map((e) => {
-          let cleanKT = (e.kelasTarget || [])
+          const cleanKT = (e.kelasTarget || [])
             .map(sanitizeClassName)
-            .filter((k) => !DELETED_CLASSES.includes(k));
-          if (cleanKT.length === 0) cleanKT = ['XII 3', 'XII 4'];
+            .filter((k) => !isDeletedClass(k));
           if (JSON.stringify(e.kelasTarget) !== JSON.stringify(cleanKT)) {
             const updatedE = { ...e, kelasTarget: cleanKT };
             setDoc(doc(db, 'exams', e.id), cleanForFirestore(updatedE)).catch(() => {});
@@ -839,10 +819,9 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             return normalizeMaterial({ ...data, id: data.id || d.id });
           });
         const loadedMats = rawMats.map((m) => {
-          let cleanKT = (m.kelasTarget || [])
+          const cleanKT = (m.kelasTarget || [])
             .map(sanitizeClassName)
-            .filter((k) => !DELETED_CLASSES.includes(k));
-          if (cleanKT.length === 0) cleanKT = ['XII 3', 'XII 4'];
+            .filter((k) => !isDeletedClass(k));
           if (JSON.stringify(m.kelasTarget) !== JSON.stringify(cleanKT)) {
             const updatedM = { ...m, kelasTarget: cleanKT };
             setDoc(doc(db, 'materials', m.id), cleanForFirestore(updatedM)).catch(() => {});
@@ -870,8 +849,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           });
         const loadedSubs = rawSubs.map((s) => {
           let cleanSK = sanitizeClassName(s.siswaKelas);
-          if (DELETED_CLASSES.includes(cleanSK)) {
-            cleanSK = 'XII 3';
+          if (isDeletedClass(cleanSK)) {
+            cleanSK = '-';
           }
           let processed = s.siswaKelas !== cleanSK ? { ...s, siswaKelas: cleanSK } : s;
           if (s.siswaKelas !== cleanSK) {
@@ -1665,7 +1644,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       mataPelajaran: exam.mataPelajaran,
       siswaId: siswa.id,
       siswaNama: siswa.name,
-      siswaKelas: siswa.kelas || 'XII 3',
+      siswaKelas: siswa.kelas || '-',
       siswaNisn: siswa.nisn || siswa.username,
       waktuMulai: new Date().toISOString(),
       sisaWaktuDetik: exam.durasiMenit * 60,

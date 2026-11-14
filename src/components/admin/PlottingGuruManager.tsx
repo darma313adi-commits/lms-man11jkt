@@ -37,7 +37,7 @@ export const PlottingGuruManager: React.FC<PlottingGuruManagerProps> = ({ initia
     if (initialKelas && rombelList.some((r) => r.nama === initialKelas)) {
       return initialKelas;
     }
-    return rombelList[0]?.nama || 'XII 3';
+    return rombelList[0]?.nama || 'XI 1';
   });
 
   const [showManageSubjectsModal, setShowManageSubjectsModal] = useState(false);

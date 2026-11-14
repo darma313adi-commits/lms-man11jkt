@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useLMS } from '../../context/LMSContext';
+import { useLMS, isDeletedClass } from '../../context/LMSContext';
 import { User, UserRole, Exam, LessonMaterial } from '../../types';
 import {
   Users,
@@ -134,8 +134,8 @@ export const AdminDashboard: React.FC = () => {
     username: '',
     password: '',
     role: 'siswa' as UserRole,
-    kelas: 'XII 3',
-    kelasAjar: ['X 3', 'XI 3', 'XII 3', 'XII 4'] as string[],
+    kelas: 'XI 1',
+    kelasAjar: [] as string[],
     nipNisn: '',
     email: '',
     mataPelajaran: '',
@@ -241,13 +241,15 @@ export const AdminDashboard: React.FC = () => {
       ...rombelList.map((r) => r.nama),
       ...users.filter((u) => u.role === 'siswa' && u.kelas).map((u) => u.kelas as string),
     ])
-  ).sort((a, b) => {
-    const rank = (c: string) =>
-      c.startsWith('XII') ? 3 : c.startsWith('XI') ? 2 : c.startsWith('X') ? 1 : 4;
-    const ra = rank(a);
-    const rb = rank(b);
-    return ra !== rb ? ra - rb : a.localeCompare(b, 'id-ID', { numeric: true });
-  });
+  )
+    .filter((k) => !isDeletedClass(k))
+    .sort((a, b) => {
+      const rank = (c: string) =>
+        c.startsWith('XII') ? 3 : c.startsWith('XI') ? 2 : c.startsWith('X') ? 1 : 4;
+      const ra = rank(a);
+      const rb = rank(b);
+      return ra !== rb ? ra - rb : a.localeCompare(b, 'id-ID', { numeric: true });
+    });
 
   const adminUsers = users.filter((u) => u.role === 'admin');
   const teachersCount = users.filter((u) => u.role === 'guru').length;
@@ -490,8 +492,8 @@ export const AdminDashboard: React.FC = () => {
       username: '',
       password: '',
       role: 'siswa',
-      kelas: 'XII 3',
-      kelasAjar: ['X 3', 'XI 3', 'XII 3', 'XII 4'],
+      kelas: classesList[0] || 'XI 1',
+      kelasAjar: [],
       nipNisn: '',
       email: '',
       mataPelajaran: '',
@@ -2803,7 +2805,7 @@ export const AdminDashboard: React.FC = () => {
                             ...editingUser,
                             role: 'siswa',
                             mataPelajaran: undefined,
-                            kelas: editingUser.kelas || 'XII 3',
+                            kelas: editingUser.kelas || classesList[0] || 'XI 1',
                           })
                         }
                         className={`py-2 px-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1 transition cursor-pointer ${
