@@ -103,6 +103,8 @@ export const AdminDashboard: React.FC = () => {
   const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
   const [kelasFilter, setKelasFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [userSortBy, setUserSortBy] = useState<'default' | 'name' | 'kelas'>('default');
+  const [userSortDirection, setUserSortDirection] = useState<'asc' | 'desc'>('asc');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
   // Modals for Viewing Exam, Material, and Participants/Reset
@@ -373,20 +375,83 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Filtered users
-  const filteredUsers = users.filter((u) => {
-    if (roleFilter !== 'all' && u.role !== roleFilter) return false;
-    if (kelasFilter !== 'all' && u.kelas !== kelasFilter) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      const matchName = u.name.toLowerCase().includes(q);
-      const matchUser = u.username.toLowerCase().includes(q);
-      const matchEmail = (u.email || '').toLowerCase().includes(q);
-      const matchNip = (u.nip || u.nisn || '').toLowerCase().includes(q);
-      return matchName || matchUser || matchEmail || matchNip;
+  const getKelasRank = (kelas?: string) => {
+    if (!kelas) return 99;
+    const upper = kelas.trim().toUpperCase();
+    if (upper.startsWith('XII')) return 3;
+    if (upper.startsWith('XI')) return 2;
+    if (upper.startsWith('X')) return 1;
+    return 4;
+  };
+
+  const compareKelas = (a?: string, b?: string) => {
+    const hasA = Boolean(a && a.trim());
+    const hasB = Boolean(b && b.trim());
+    if (!hasA && !hasB) return 0;
+    if (!hasA) return 1;
+    if (!hasB) return -1;
+    const ra = getKelasRank(a);
+    const rb = getKelasRank(b);
+    if (ra !== rb) return ra - rb;
+    return (a || '').localeCompare(b || '', 'id-ID', { numeric: true, sensitivity: 'base' });
+  };
+
+  const handleToggleUserSort = (field: 'name' | 'kelas') => {
+    if (userSortBy === field) {
+      setUserSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setUserSortBy(field);
+      setUserSortDirection('asc');
     }
-    return true;
-  });
+  };
+
+  // Filtered & sorted users
+  const filteredUsers = users
+    .filter((u) => {
+      if (roleFilter !== 'all' && u.role !== roleFilter) return false;
+      if (kelasFilter !== 'all' && u.kelas !== kelasFilter) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const matchName = u.name.toLowerCase().includes(q);
+        const matchUser = u.username.toLowerCase().includes(q);
+        const matchEmail = (u.email || '').toLowerCase().includes(q);
+        const matchNip = (u.nip || u.nisn || '').toLowerCase().includes(q);
+        return matchName || matchUser || matchEmail || matchNip;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (userSortBy === 'name') {
+        const cmp = a.name.localeCompare(b.name, 'id-ID', {
+          numeric: true,
+          sensitivity: 'base',
+        });
+        if (cmp !== 0) return userSortDirection === 'asc' ? cmp : -cmp;
+        return compareKelas(a.kelas, b.kelas);
+      }
+
+      if (userSortBy === 'kelas') {
+        const hasA = Boolean(a.kelas && a.kelas.trim());
+        const hasB = Boolean(b.kelas && b.kelas.trim());
+        if (!hasA && !hasB) {
+          return a.name.localeCompare(b.name, 'id-ID', {
+            numeric: true,
+            sensitivity: 'base',
+          });
+        }
+        if (!hasA) return 1;
+        if (!hasB) return -1;
+
+        const cmp = compareKelas(a.kelas, b.kelas);
+        if (cmp !== 0) return userSortDirection === 'asc' ? cmp : -cmp;
+        return a.name.localeCompare(b.name, 'id-ID', {
+          numeric: true,
+          sensitivity: 'base',
+        });
+      }
+
+      return 0;
+    });
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1043,6 +1108,45 @@ export const AdminDashboard: React.FC = () => {
                   ))}
                 </select>
               </div>
+
+              <div className="flex items-center gap-2">
+                <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="text-xs text-slate-500 font-semibold">Urutkan:</span>
+                <select
+                  value={
+                    userSortBy === 'default'
+                      ? 'default'
+                      : `${userSortBy}_${userSortDirection}`
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'default') {
+                      setUserSortBy('default');
+                      setUserSortDirection('asc');
+                    } else if (val === 'name_asc') {
+                      setUserSortBy('name');
+                      setUserSortDirection('asc');
+                    } else if (val === 'name_desc') {
+                      setUserSortBy('name');
+                      setUserSortDirection('desc');
+                    } else if (val === 'kelas_asc') {
+                      setUserSortBy('kelas');
+                      setUserSortDirection('asc');
+                    } else if (val === 'kelas_desc') {
+                      setUserSortBy('kelas');
+                      setUserSortDirection('desc');
+                    }
+                  }}
+                  aria-label="Urutkan pengguna"
+                  className="text-xs bg-white border border-slate-300 rounded-xl px-3 py-2 font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  <option value="default">Urutan Default</option>
+                  <option value="name_asc">Nama (A → Z)</option>
+                  <option value="name_desc">Nama (Z → A)</option>
+                  <option value="kelas_asc">Kelas (X → XII)</option>
+                  <option value="kelas_desc">Kelas (XII → X)</option>
+                </select>
+              </div>
             </div>
 
             <div className="flex items-center gap-3">
@@ -1128,11 +1232,51 @@ export const AdminDashboard: React.FC = () => {
                       title="Pilih Semua yang Ditampilkan"
                     />
                   </th>
-                  <th className="px-4 py-3.5">Nama & Identitas</th>
+                  <th className="px-4 py-3.5">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleUserSort('name')}
+                      className={`inline-flex items-center gap-1.5 font-bold hover:text-indigo-700 transition cursor-pointer ${
+                        userSortBy === 'name' ? 'text-indigo-700' : 'text-slate-700'
+                      }`}
+                      title="Klik untuk mengurutkan berdasarkan Nama (A-Z / Z-A)"
+                    >
+                      <span>Nama & Identitas</span>
+                      {userSortBy === 'name' ? (
+                        userSortDirection === 'asc' ? (
+                          <ChevronUp className="w-3.5 h-3.5 text-indigo-600" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                        )
+                      ) : (
+                        <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </button>
+                  </th>
                   <th className="px-4 py-3.5">Username</th>
                   <th className="px-4 py-3.5">Password</th>
                   <th className="px-4 py-3.5">Peran (Role)</th>
-                  <th className="px-4 py-3.5">Kelas / Rombel</th>
+                  <th className="px-4 py-3.5">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleUserSort('kelas')}
+                      className={`inline-flex items-center gap-1.5 font-bold hover:text-indigo-700 transition cursor-pointer ${
+                        userSortBy === 'kelas' ? 'text-indigo-700' : 'text-slate-700'
+                      }`}
+                      title="Klik untuk mengurutkan berdasarkan Kelas (X-XII / XII-X)"
+                    >
+                      <span>Kelas / Rombel</span>
+                      {userSortBy === 'kelas' ? (
+                        userSortDirection === 'asc' ? (
+                          <ChevronUp className="w-3.5 h-3.5 text-indigo-600" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                        )
+                      ) : (
+                        <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </button>
+                  </th>
                   <th className="px-4 py-3.5">NIP / NISN</th>
                   <th className="px-4 py-3.5 text-right">Aksi</th>
                 </tr>
